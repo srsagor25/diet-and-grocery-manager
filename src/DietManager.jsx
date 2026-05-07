@@ -18,316 +18,8 @@ import {
   Check,
 } from "lucide-react";
 
-/* ============================================================
-   CONSTANTS
-============================================================ */
+import { FOODS, GROCERY_CATEGORIES, TEMPLATES, SAIDUR_PROFILE, cloneTemplate } from "./profiles.js";
 
-const WORKOUT_APP_URL = "https://workout-cyan-tau.vercel.app/";
-
-const FOODS = {
-  chicken_thigh:      { key: "chicken_thigh",      display: "Chicken Thigh (skinless)", unit: "g",      kcal: 1.45, protein: 0.21,  groceryKey: "chicken_thigh" },
-  chicken_legs:       { key: "chicken_legs",       display: "Chicken Legs (skinless)",  unit: "g",      kcal: 1.20, protein: 0.20,  groceryKey: "chicken_legs" },
-  chicken_breast:     { key: "chicken_breast",     display: "Chicken Breast",           unit: "g",      kcal: 1.65, protein: 0.31,  groceryKey: "chicken_breast" },
-  beef_lean:          { key: "beef_lean",          display: "Lean Beef (pur cut)",      unit: "g",      kcal: 1.70, protein: 0.21,  groceryKey: "beef" },
-  fish:               { key: "fish",               display: "Fish (Tilapia/Rui)",       unit: "g",      kcal: 0.96, protein: 0.20,  groceryKey: "fish" },
-  egg:                { key: "egg",                display: "Egg (large)",              unit: "pc",     kcal: 72,   protein: 6.3,   groceryKey: "egg" },
-  rice:               { key: "rice",               display: "Steamed Rice (cooked)",    unit: "g",      kcal: 1.30, protein: 0.027, groceryKey: "rice" },
-  khichuri_mix:       { key: "khichuri_mix",       display: "Khichuri (cooked)",        unit: "g",      kcal: 1.30, protein: 0.040, groceryKey: null }, // compound — handled in decrement
-  tehari_rice:        { key: "tehari_rice",        display: "Tehari Rice",              unit: "g",      kcal: 1.50, protein: 0.030, groceryKey: null }, // compound — handled in decrement
-  pizza_regular:      { key: "pizza_regular",      display: "Pizza Slice (regular)",    unit: "slice",  kcal: 250,  protein: 10,    groceryKey: null },
-  pizza_chicken_thin: { key: "pizza_chicken_thin", display: "Pizza Slice (chicken thin)",unit: "slice", kcal: 183,  protein: 13,    groceryKey: null },
-  cucumber:           { key: "cucumber",           display: "Cucumber",                 unit: "g",      kcal: 0.15, protein: 0.007, groceryKey: "cucumber" },
-  bhuna_oil:          { key: "bhuna_oil",          display: "Bhuna Oil (cooking)",      unit: "tbsp",   kcal: 120,  protein: 0,     groceryKey: "oil" },
-  ghee:               { key: "ghee",               display: "Ghee",                     unit: "tbsp",   kcal: 120,  protein: 0,     groceryKey: "ghee" },
-  oil_spray:          { key: "oil_spray",          display: "Oil Spray (air fry)",      unit: "tsp",    kcal: 40,   protein: 0,     groceryKey: "oil_spray" },
-  fruit_mixed:        { key: "fruit_mixed",        display: "Mixed Fruits",             unit: "g",      kcal: 0.60, protein: 0.008, groceryKey: "fruits" },
-  milk:               { key: "milk",               display: "Milk",                     unit: "ml",     kcal: 0.60, protein: 0.033, groceryKey: "milk" },
-  cashew:             { key: "cashew",             display: "Cashew (Kaju)",            unit: "g",      kcal: 5.53, protein: 0.18,  groceryKey: "cashew" },
-  dates:              { key: "dates",              display: "Dates (Khejur)",           unit: "g",      kcal: 2.77, protein: 0.018, groceryKey: "dates" },
-  peanut:             { key: "peanut",             display: "Peanut/Mixed Nuts",        unit: "g",      kcal: 5.85, protein: 0.26,  groceryKey: "peanut" },
-  sauce:              { key: "sauce",              display: "Sauce",                    unit: "cup",    kcal: 48,   protein: 2,     groceryKey: "sauce" },
-};
-
-const LUNCH_PRESETS = {
-  lunch_chicken_thigh: {
-    key: "lunch_chicken_thigh",
-    name: "Chicken Thigh Bhuna + Rice",
-    icon: "🍗",
-    items: [
-      { food: "chicken_thigh", amount: 333 },
-      { food: "rice", amount: 200 },
-      { food: "egg", amount: 2 },
-      { food: "cucumber", amount: 200 },
-      { food: "bhuna_oil", amount: 2 },
-    ],
-  },
-  lunch_chicken_legs: {
-    key: "lunch_chicken_legs",
-    name: "Chicken Legs + Rice",
-    icon: "🍗",
-    items: [
-      { food: "chicken_legs", amount: 500 },
-      { food: "rice", amount: 200 },
-      { food: "cucumber", amount: 200 },
-      { food: "oil_spray", amount: 1 },
-    ],
-  },
-  lunch_fish: {
-    key: "lunch_fish",
-    name: "Fish Bhuna + Rice",
-    icon: "🐟",
-    items: [
-      { food: "fish", amount: 333 },
-      { food: "rice", amount: 200 },
-      { food: "egg", amount: 2 },
-      { food: "cucumber", amount: 200 },
-      { food: "bhuna_oil", amount: 2 },
-    ],
-  },
-  lunch_beef: {
-    key: "lunch_beef",
-    name: "Beef Bhuna + Rice",
-    icon: "🥩",
-    note: "Pair with light fish dinner",
-    items: [
-      { food: "beef_lean", amount: 250 },
-      { food: "rice", amount: 200 },
-      { food: "egg", amount: 2 },
-      { food: "cucumber", amount: 200 },
-      { food: "bhuna_oil", amount: 2 },
-    ],
-  },
-};
-
-const CHEAT_PRESETS = {
-  cheat_khichuri: {
-    key: "cheat_khichuri",
-    name: "Beef Khichuri",
-    icon: "🍲",
-    versions: {
-      original: {
-        label: "Original",
-        items: [
-          { food: "khichuri_mix", amount: 300 },
-          { food: "beef_lean", amount: 150 },
-          { food: "bhuna_oil", amount: 2 },
-        ],
-      },
-      healthy: {
-        label: "Healthy",
-        note: "More beef, less oil, +eggs",
-        items: [
-          { food: "khichuri_mix", amount: 250 },
-          { food: "beef_lean", amount: 250 },
-          { food: "bhuna_oil", amount: 1 },
-          { food: "egg", amount: 2 },
-        ],
-      },
-    },
-  },
-  cheat_tehari: {
-    key: "cheat_tehari",
-    name: "Tehari (Beef)",
-    icon: "🍛",
-    versions: {
-      original: {
-        label: "Original",
-        items: [
-          { food: "tehari_rice", amount: 350 },
-          { food: "beef_lean", amount: 150 },
-          { food: "ghee", amount: 2 },
-        ],
-      },
-      healthy: {
-        label: "Healthy",
-        note: "More beef, less rice, +eggs",
-        items: [
-          { food: "tehari_rice", amount: 200 },
-          { food: "beef_lean", amount: 300 },
-          { food: "ghee", amount: 1 },
-          { food: "egg", amount: 2 },
-        ],
-      },
-    },
-  },
-  cheat_pizza: {
-    key: "cheat_pizza",
-    name: "Pizza",
-    icon: "🍕",
-    versions: {
-      original: {
-        label: "Original (3 slices regular)",
-        items: [{ food: "pizza_regular", amount: 3 }],
-      },
-      healthy: {
-        label: "Healthy (3 slices chicken thin)",
-        note: "Higher protein, lower fat",
-        items: [{ food: "pizza_chicken_thin", amount: 3 }],
-      },
-    },
-  },
-  cheat_family_big_lunch: {
-    key: "cheat_family_big_lunch",
-    name: "Family Big Lunch",
-    icon: "👨‍👩‍👧‍👦",
-    note: "4 items + rice. Auto-suggests light fish dinner.",
-    versions: {
-      original: {
-        label: "As served",
-        items: [
-          { food: "chicken_thigh", amount: 200 },
-          { food: "beef_lean", amount: 150 },
-          { food: "rice", amount: 200 },
-          { food: "egg", amount: 1 },
-          { food: "bhuna_oil", amount: 2 },
-        ],
-      },
-      healthy: {
-        label: "Lighter portions",
-        items: [
-          { food: "chicken_thigh", amount: 200 },
-          { food: "beef_lean", amount: 100 },
-          { food: "rice", amount: 150 },
-          { food: "egg", amount: 1 },
-          { food: "bhuna_oil", amount: 1 },
-        ],
-      },
-    },
-  },
-};
-
-const SHAKE_PRESETS = {
-  shake_standard: {
-    key: "shake_standard",
-    name: "Standard Shake",
-    icon: "🥤",
-    items: [
-      { food: "milk", amount: 250 },
-      { food: "cashew", amount: 15 },
-      { food: "dates", amount: 30 },
-    ],
-  },
-  shake_power: {
-    key: "shake_power",
-    name: "Power Shake",
-    icon: "💪",
-    note: "Auto-suggested on training/football days",
-    items: [
-      { food: "milk", amount: 250 },
-      { food: "cashew", amount: 30 },
-      { food: "dates", amount: 30 },
-      { food: "peanut", amount: 30 },
-    ],
-  },
-};
-
-const DINNER_PRESETS = {
-  dinner_fish: {
-    key: "dinner_fish",
-    name: "Fish Dinner",
-    icon: "🐟",
-    items: [
-      { food: "fish", amount: 333 },
-      { food: "egg", amount: 2 },
-      { food: "fruit_mixed", amount: 250 },
-      { food: "oil_spray", amount: 1 },
-      { food: "sauce", amount: 1 },
-    ],
-  },
-  dinner_beef: {
-    key: "dinner_beef",
-    name: "Beef Dinner",
-    icon: "🥩",
-    items: [
-      { food: "beef_lean", amount: 250 },
-      { food: "egg", amount: 2 },
-      { food: "fruit_mixed", amount: 250 },
-      { food: "oil_spray", amount: 1 },
-      { food: "sauce", amount: 1 },
-    ],
-  },
-  dinner_fish_light: {
-    key: "dinner_fish_light",
-    name: "Fish Light",
-    icon: "🐟",
-    note: "Auto-suggested after beef/cheat/family lunch",
-    items: [
-      { food: "fish", amount: 333 },
-      { food: "egg", amount: 2 },
-      { food: "oil_spray", amount: 1 },
-      { food: "sauce", amount: 1 },
-    ],
-  },
-};
-
-const TRAINING_DAY_TYPES = [
-  { id: "rest",     label: "Rest Day",     icon: "🛏️", color: "#6b5a3e", target: 2400 },
-  { id: "push",     label: "Push Day",     icon: "💪", color: "#c44827", target: 2700 },
-  { id: "pull",     label: "Pull Day",     icon: "🎯", color: "#c44827", target: 2700 },
-  { id: "legs",     label: "Leg Day",      icon: "🦵", color: "#c44827", target: 2700 },
-  { id: "football", label: "Football Day", icon: "⚽", color: "#4a6b3e", target: 2750 },
-];
-
-const COFFEE_SCHEDULE = [
-  { time: "9:00 AM",        label: "1st cup" },
-  { time: "11:00 AM",       label: "2nd cup" },
-  { time: "2:00 PM",        label: "3rd cup" },
-  { time: "4:00 PM",        label: "4th cup" },
-  { time: "5:30–6:00 PM",   label: "Last cup", note: "After this: tea without sugar only" },
-];
-
-const HEALTHY_FAST_FOOD_TIPS = [
-  { craving: "Pizza",    swap: "Thin crust, chicken topping, no extra cheese",     why: "Saves ~200 kcal, +9g protein per 3 slices" },
-  { craving: "Pasta",    swap: "Whole grain pasta + grilled chicken + tomato sauce",why: "Complex carbs, lean protein, ~600 kcal" },
-  { craving: "Burger",   swap: "Grilled chicken burger, no mayo, lettuce wrap",     why: "Saves 250 kcal, doubles protein ratio" },
-  { craving: "Soup",     swap: "Clear chicken/beef broth with vegetables, no cream",why: "High volume, 25g protein, ~250 kcal" },
-  { craving: "Khichuri", swap: "More beef + dal, less oil, add eggs",               why: "Doubles protein" },
-  { craving: "Tehari",   swap: "Less rice, more beef, less ghee",                   why: "Hits 80g protein vs 43g original" },
-];
-
-const GROCERY_TEMPLATE = [
-  // Protein
-  { key: "chicken_thigh",  name: "Chicken Thigh (skinless)", category: "Protein",         unit: "g",      initialQty: 1000, packetSize: 333,  lowThreshold: 333, icon: "🍗" },
-  { key: "chicken_legs",   name: "Chicken Legs (skinless)",  category: "Protein",         unit: "g",      initialQty: 1000, packetSize: 500,  lowThreshold: 500, icon: "🍗" },
-  { key: "chicken_breast", name: "Chicken Breast",           category: "Protein",         unit: "g",      initialQty: 0,    packetSize: 333,  lowThreshold: 333, icon: "🍗", optional: true },
-  { key: "beef",           name: "Lean Beef (pur cut)",      category: "Protein",         unit: "g",      initialQty: 3000, packetSize: 250,  lowThreshold: 500, icon: "🥩" },
-  { key: "fish",           name: "Fish (Tilapia/Rui)",       category: "Protein",         unit: "g",      initialQty: 1000, packetSize: 333,  lowThreshold: 333, icon: "🐟" },
-  { key: "egg",            name: "Eggs",                     category: "Protein",         unit: "pc",     initialQty: 30,   packetSize: 12,   lowThreshold: 6,   icon: "🥚" },
-
-  // Dairy & Shake
-  { key: "milk",           name: "Milk",                     category: "Dairy & Shake",   unit: "ml",     initialQty: 1000, packetSize: 1000, lowThreshold: 250, icon: "🥛" },
-  { key: "cashew",         name: "Cashew (Kaju)",            category: "Dairy & Shake",   unit: "g",      initialQty: 250,  packetSize: 250,  lowThreshold: 50,  icon: "🥜" },
-  { key: "dates",          name: "Dates (Khejur)",           category: "Dairy & Shake",   unit: "g",      initialQty: 250,  packetSize: 250,  lowThreshold: 60,  icon: "🌴" },
-  { key: "peanut",         name: "Peanut/Mixed Nuts",        category: "Dairy & Shake",   unit: "g",      initialQty: 250,  packetSize: 250,  lowThreshold: 60,  icon: "🥜" },
-
-  // Aromatics
-  { key: "onion",          name: "Onion (Peyaj)",            category: "Aromatics",       unit: "g",      initialQty: 1000, packetSize: 1000, lowThreshold: 200, icon: "🧅" },
-  { key: "garlic",         name: "Garlic (Roshun)",          category: "Aromatics",       unit: "g",      initialQty: 250,  packetSize: 250,  lowThreshold: 50,  icon: "🧄" },
-  { key: "ginger",         name: "Ginger (Ada)",             category: "Aromatics",       unit: "g",      initialQty: 200,  packetSize: 200,  lowThreshold: 50,  icon: "🫚" },
-
-  // Moshla
-  { key: "holoud",         name: "Holoud (Turmeric)",        category: "Moshla",          unit: "g",      initialQty: 100,  packetSize: 100,  lowThreshold: 20,  icon: "🌶️" },
-  { key: "morich",         name: "Morich (Chili)",           category: "Moshla",          unit: "g",      initialQty: 100,  packetSize: 100,  lowThreshold: 20,  icon: "🌶️" },
-  { key: "zira",           name: "Zira (Cumin)",             category: "Moshla",          unit: "g",      initialQty: 100,  packetSize: 100,  lowThreshold: 20,  icon: "🌿" },
-  { key: "dhonia",         name: "Dhonia (Coriander)",       category: "Moshla",          unit: "g",      initialQty: 100,  packetSize: 100,  lowThreshold: 20,  icon: "🌿" },
-  { key: "gorom_moshla",   name: "Gorom Moshla",             category: "Moshla",          unit: "g",      initialQty: 50,   packetSize: 50,   lowThreshold: 15,  icon: "✨" },
-
-  // Fresh
-  { key: "cucumber",       name: "Cucumber",                 category: "Fresh",           unit: "g",      initialQty: 1000, packetSize: 200,  lowThreshold: 400, icon: "🥒" },
-  { key: "fruits",         name: "Mixed Fruits",             category: "Fresh",           unit: "g",      initialQty: 1500, packetSize: 250,  lowThreshold: 500, icon: "🍎" },
-
-  // Pantry
-  { key: "rice",           name: "Rice (raw)",               category: "Pantry",          unit: "g",      initialQty: 5000, packetSize: 1000, lowThreshold: 1000,icon: "🍚" },
-  { key: "dal",            name: "Dal/Lentils",              category: "Pantry",          unit: "g",      initialQty: 1000, packetSize: 500,  lowThreshold: 250, icon: "🥣" },
-  { key: "oil",            name: "Cooking Oil",              category: "Pantry",          unit: "ml",     initialQty: 1000, packetSize: 500,  lowThreshold: 200, icon: "🫗" },
-  { key: "ghee",           name: "Ghee",                     category: "Pantry",          unit: "g",      initialQty: 250,  packetSize: 250,  lowThreshold: 50,  icon: "🧈" },
-  { key: "oil_spray",      name: "Oil Spray",                category: "Pantry",          unit: "bottle", initialQty: 1,    packetSize: 1,    lowThreshold: 1,   icon: "🫧" },
-  { key: "sauce",          name: "Sauce",                    category: "Pantry",          unit: "cup",    initialQty: 14,   packetSize: 14,   lowThreshold: 4,   icon: "🌶️" },
-];
-
-const GROCERY_CATEGORIES = ["Protein", "Dairy & Shake", "Aromatics", "Moshla", "Fresh", "Pantry"];
-
-const CHEAT_BASELINE_KCAL = 1019;
 
 /* ============================================================
    HELPERS
@@ -368,7 +60,7 @@ function calcMeal(items) {
   return { kcal: Math.round(kcal), protein: Math.round(protein * 10) / 10 };
 }
 
-function calcDayTotals(meals) {
+function calcDayTotals(meals, baselineKcal = 1019) {
   let kcal = 0;
   let protein = 0;
   let cheats = 0;
@@ -380,7 +72,7 @@ function calcDayTotals(meals) {
     protein += c.protein;
     if (m.isCheat) {
       cheats += 1;
-      surplus += Math.max(0, c.kcal - CHEAT_BASELINE_KCAL);
+      surplus += Math.max(0, c.kcal - baselineKcal);
     }
   }
   return { kcal, protein: Math.round(protein * 10) / 10, cheats, surplus };
@@ -414,17 +106,25 @@ function calcWeekTotals(allDays) {
   );
 }
 
-function targetForDay(dayType, steps) {
-  const base = TRAINING_DAY_TYPES.find((d) => d.id === dayType)?.target ?? 2400;
+function targetForDay(profile, dayType, steps) {
+  const dayTypes = profile?.dayTypes || [];
+  const proteinTarget = profile?.proteinTarget ?? 150;
+  const sa = profile?.stepAdjust || {};
+  const lowT = sa.lowThreshold ?? 8000;
+  const highT = sa.highThreshold ?? 12000;
+  const lowD = sa.lowDelta ?? -100;
+  const highD = sa.highDelta ?? 100;
+
+  const base = dayTypes.find((d) => d.id === dayType)?.target ?? (dayTypes[0]?.target ?? 2400);
   let adj = 0;
   if (steps != null && steps !== "") {
     const n = Number(steps);
     if (!Number.isNaN(n)) {
-      if (n < 8000) adj = -100;
-      else if (n > 12000) adj = +100;
+      if (n < lowT) adj = lowD;
+      else if (n > highT) adj = highD;
     }
   }
-  return { kcal: base + adj, protein: 180 };
+  return { kcal: base + adj, protein: proteinTarget };
 }
 
 function weeklyCompensation(weekData) {
@@ -537,8 +237,8 @@ function generateShoppingList(plannedMeals, currentInventory) {
   return shopping;
 }
 
-function freshGrocery() {
-  return GROCERY_TEMPLATE.map((g) => ({ ...g, currentQty: g.initialQty }));
+function freshGrocery(template = []) {
+  return template.map((g) => ({ ...g, currentQty: g.initialQty }));
 }
 
 function fmtNum(n) {
@@ -587,7 +287,7 @@ async function removeKey(key) {
    SUB-COMPONENTS
 ============================================================ */
 
-function Masthead({ date }) {
+function Masthead({ date, profile }) {
   const d = new Date(date);
   const dateLong = d.toLocaleDateString(undefined, {
     weekday: "long",
@@ -595,6 +295,10 @@ function Masthead({ date }) {
     month: "long",
     day: "numeric",
   });
+  const stats = profile?.stats || {};
+  const statBits = [stats.heightDisplay, stats.weightKg ? `${stats.weightKg}kg` : null].filter(Boolean);
+  const subtitle =
+    [`A kitchen journal`, profile?.name, statBits.join(" / ")].filter(Boolean).join(" · ");
   return (
     <header className="border-b-2 border-ink pb-3 mb-6">
       <div className="flex items-end justify-between text-[10px] tracking-[0.2em] font-mono uppercase text-ink-muted">
@@ -604,9 +308,9 @@ function Masthead({ date }) {
       <h1 className="font-display text-5xl md:text-7xl font-black tracking-tight leading-none mt-1">
         The Daily Plate
       </h1>
-      <div className="flex items-center justify-between mt-2 text-[10px] tracking-[0.2em] font-mono uppercase text-ink-muted">
-        <div className="italic font-display">A kitchen journal · 5'11" / 86kg</div>
-        <div>{dateLong}</div>
+      <div className="flex items-center justify-between mt-2 text-[10px] tracking-[0.2em] font-mono uppercase text-ink-muted gap-3">
+        <div className="italic font-display truncate">{subtitle}</div>
+        <div className="shrink-0">{dateLong}</div>
       </div>
       <div className="border-t border-ink/40 mt-3" />
       <div className="border-t border-ink/40 mt-[2px]" />
@@ -620,6 +324,7 @@ function TabBar({ tab, setTab }) {
     { id: "week",    label: "Week" },
     { id: "cheat",   label: "Cheat" },
     { id: "grocery", label: "Grocery" },
+    { id: "profile", label: "Profile" },
     { id: "build",   label: "Build" },
   ];
   return (
@@ -629,7 +334,7 @@ function TabBar({ tab, setTab }) {
           <li key={t.id} className="flex-1">
             <button
               onClick={() => setTab(t.id)}
-              className={`w-full py-3 font-mono text-[11px] uppercase tracking-[0.25em] transition-colors ${
+              className={`w-full py-3 px-1 font-mono text-[10px] md:text-[11px] uppercase tracking-[0.18em] md:tracking-[0.25em] transition-colors ${
                 tab === t.id
                   ? "bg-ink text-paper"
                   : "text-ink hover:bg-ink/5"
@@ -644,10 +349,11 @@ function TabBar({ tab, setTab }) {
   );
 }
 
-function TrainingDayBadge({ trainingDay, onChange }) {
-  const types = TRAINING_DAY_TYPES;
+function TrainingDayBadge({ trainingDay, onChange, dayTypes = [], workoutAppUrl }) {
+  const types = dayTypes;
   const current = types.find((t) => t.id === trainingDay) || null;
   const cycle = () => {
+    if (!types.length) return;
     if (!current) return onChange(types[0].id);
     const idx = types.findIndex((t) => t.id === trainingDay);
     onChange(types[(idx + 1) % types.length].id);
@@ -658,14 +364,16 @@ function TrainingDayBadge({ trainingDay, onChange }) {
         <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
           Today's training
         </span>
-        <a
-          href={WORKOUT_APP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-mono text-[10px] uppercase tracking-[0.2em] flex items-center gap-1 hover:text-accent"
-        >
-          Workout app <ExternalLink size={11} />
-        </a>
+        {workoutAppUrl ? (
+          <a
+            href={workoutAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-[10px] uppercase tracking-[0.2em] flex items-center gap-1 hover:text-accent"
+          >
+            Workout app <ExternalLink size={11} />
+          </a>
+        ) : null}
       </div>
       <button
         onClick={cycle}
@@ -803,12 +511,14 @@ function MacroCard({ label, value, target, unit, accent }) {
   );
 }
 
-function CoffeeTracker({ coffee, setCoffee }) {
+function CoffeeTracker({ coffee, setCoffee, schedule = [] }) {
+  if (!schedule.length) return null;
   const toggle = (i) => {
     const next = [...coffee];
     next[i] = !next[i];
     setCoffee(next);
   };
+  const lastNote = schedule[schedule.length - 1]?.note;
   return (
     <div className="border border-ink p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -816,7 +526,7 @@ function CoffeeTracker({ coffee, setCoffee }) {
         <span className="font-mono text-[10px] uppercase tracking-[0.25em]">Coffee schedule</span>
       </div>
       <ul className="space-y-2">
-        {COFFEE_SCHEDULE.map((c, i) => (
+        {schedule.map((c, i) => (
           <li key={i} className="flex items-center gap-3">
             <button
               onClick={() => toggle(i)}
@@ -838,9 +548,11 @@ function CoffeeTracker({ coffee, setCoffee }) {
           </li>
         ))}
       </ul>
-      <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mt-3 italic">
-        {COFFEE_SCHEDULE[4].note}
-      </div>
+      {lastNote ? (
+        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mt-3 italic">
+          {lastNote}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -850,7 +562,7 @@ function MealSlot({
   label,
   meal,
   presets,
-  trainingDay,
+  suggestedPresetKey,
   onSelect,
   onClear,
   onCheatPrompt,
@@ -922,14 +634,15 @@ function MealSlot({
           <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
             Quick add
           </div>
+          {Object.values(presets || {}).length === 0 ? (
+            <div className="font-body italic text-sm text-ink-muted">
+              No presets yet — use the Build tab to create one.
+            </div>
+          ) : null}
           <div className="space-y-2">
-            {Object.values(presets).map((p) => {
+            {Object.values(presets || {}).map((p) => {
               const c = calcMeal(p.items);
-              const recommended =
-                slot === "shake" &&
-                ((p.key === "shake_power" &&
-                  ["push", "pull", "legs", "football"].includes(trainingDay)) ||
-                  (p.key === "shake_standard" && trainingDay === "rest"));
+              const recommended = suggestedPresetKey && p.key === suggestedPresetKey;
               return (
                 <button
                   key={p.key}
@@ -1173,11 +886,14 @@ function FoodPicker({ onAdd }) {
 export default function DietManager() {
   const [tab, setTab] = useState("today");
   const [date] = useState(todayKey());
+  const [profile, setProfile] = useState(SAIDUR_PROFILE);
   const [trainingDay, setTrainingDay] = useState(null);
   const [steps, setSteps] = useState(null);
   const [meals, setMeals] = useState({ lunch: null, shake: null, dinner: null });
-  const [coffee, setCoffee] = useState([false, false, false, false, false]);
-  const [grocery, setGrocery] = useState(freshGrocery());
+  const [coffee, setCoffee] = useState(() =>
+    new Array(SAIDUR_PROFILE.coffeeSchedule.length).fill(false),
+  );
+  const [grocery, setGrocery] = useState(() => freshGrocery(SAIDUR_PROFILE.groceryTemplate));
   const [weekDays, setWeekDays] = useState([]);
   const [plannedWeek, setPlannedWeek] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1185,22 +901,37 @@ export default function DietManager() {
   /* ----- Initial load ----- */
   useEffect(() => {
     (async () => {
+      const profileStored = await loadKey("profile:current", null);
+      const activeProfile = profileStored && typeof profileStored === "object"
+        ? profileStored
+        : SAIDUR_PROFILE;
+      setProfile(activeProfile);
+
+      const coffeeLen = (activeProfile.coffeeSchedule || []).length;
       const todayMeals = await loadKey(`meals:${date}`, { meals: { lunch: null, shake: null, dinner: null } });
-      const todayCoffee = await loadKey(`coffee:${date}`, [false, false, false, false, false]);
+      const todayCoffee = await loadKey(`coffee:${date}`, new Array(coffeeLen).fill(false));
       const todayTraining = await loadKey(`training:${date}`, null);
       const todaySteps = await loadKey(`steps:${date}`, null);
       const groceryStored = await loadKey("grocery:current", null);
       const planStored = await loadKey("plan:current_week", null);
 
       if (todayMeals?.meals) setMeals(todayMeals.meals);
-      if (Array.isArray(todayCoffee) && todayCoffee.length === 5) setCoffee(todayCoffee);
+      if (Array.isArray(todayCoffee) && todayCoffee.length === coffeeLen) {
+        setCoffee(todayCoffee);
+      } else {
+        setCoffee(new Array(coffeeLen).fill(false));
+      }
       setTrainingDay(todayTraining);
       setSteps(todaySteps);
-      setGrocery(Array.isArray(groceryStored) && groceryStored.length ? groceryStored : freshGrocery());
+      setGrocery(
+        Array.isArray(groceryStored) && groceryStored.length
+          ? groceryStored
+          : freshGrocery(activeProfile.groceryTemplate),
+      );
       if (planStored) setPlannedWeek(planStored);
 
       // Load last 7 days for week tab
-      await reloadWeek();
+      await reloadWeek(activeProfile);
 
       setLoading(false);
     })();
@@ -1208,6 +939,9 @@ export default function DietManager() {
   }, []);
 
   /* ----- Save effects ----- */
+  useEffect(() => {
+    if (!loading) saveKey("profile:current", profile);
+  }, [profile, loading]);
   useEffect(() => {
     if (!loading) saveKey(`meals:${date}`, { meals });
   }, [meals, date, loading]);
@@ -1230,7 +964,7 @@ export default function DietManager() {
   /* ----- Cheat day surplus persistence ----- */
   useEffect(() => {
     if (loading) return;
-    const totals = calcDayTotals(meals);
+    const totals = calcDayTotals(meals, profile.cheatBaselineKcal);
     if (totals.cheats > 0) {
       saveKey(`cheat:${date}`, {
         count: totals.cheats,
@@ -1242,17 +976,20 @@ export default function DietManager() {
     } else {
       removeKey(`cheat:${date}`);
     }
-  }, [meals, date, loading]);
+  }, [meals, date, loading, profile.cheatBaselineKcal]);
 
   /* ----- Week loader ----- */
-  async function reloadWeek() {
+  async function reloadWeek(activeProfile = profile) {
     const days = weekDateKeys();
+    const baseline = activeProfile?.cheatBaselineKcal ?? 1019;
     const out = [];
     for (const k of days) {
       const m = await loadKey(`meals:${k}`, null);
       const t = await loadKey(`training:${k}`, null);
       const s = await loadKey(`steps:${k}`, null);
-      const totals = m?.meals ? calcDayTotals(m.meals) : { kcal: 0, protein: 0, cheats: 0, surplus: 0 };
+      const totals = m?.meals
+        ? calcDayTotals(m.meals, baseline)
+        : { kcal: 0, protein: 0, cheats: 0, surplus: 0 };
       out.push({
         date: k,
         meals: m?.meals || null,
@@ -1271,21 +1008,21 @@ export default function DietManager() {
   useEffect(() => {
     if (!loading) reloadWeek();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meals, trainingDay, steps]);
+  }, [meals, trainingDay, steps, profile.cheatBaselineKcal]);
 
   /* ----- Meal logging ----- */
   function logMeal(slot, mealObj) {
     setMeals((prev) => {
       const next = { ...prev, [slot]: mealObj };
-      // Auto-suggest light fish dinner after beef / cheat / family lunch.
+      // Auto-suggest light dinner after configured trigger lunches.
       if (slot === "lunch" && !prev.dinner) {
+        const triggers = profile.lightDinnerTriggers || [];
+        const lightKey = profile.lightDinnerKey;
         const triggersLight =
-          mealObj?.key === "lunch_beef" ||
-          mealObj?.isCheat ||
-          mealObj?.key === "cheat_family_big_lunch";
-        if (triggersLight) {
-          const fl = DINNER_PRESETS.dinner_fish_light;
-          next.dinner = { ...fl, items: fl.items.map((i) => ({ ...i })) };
+          (mealObj?.key && triggers.includes(mealObj.key)) || mealObj?.isCheat;
+        if (triggersLight && lightKey) {
+          const fl = profile.dinnerPresets?.[lightKey];
+          if (fl) next.dinner = { ...fl, items: fl.items.map((i) => ({ ...i })) };
         }
       }
       return next;
@@ -1341,7 +1078,7 @@ export default function DietManager() {
   }
   function resetGroceryToTemplate() {
     if (!confirm("Reset all inventory to template values?")) return;
-    setGrocery(freshGrocery());
+    setGrocery(freshGrocery(profile.groceryTemplate));
   }
   function clearShoppingPlan() {
     if (!confirm("Clear the planned week / shopping list?")) return;
@@ -1352,15 +1089,34 @@ export default function DietManager() {
   function resetToday() {
     if (!confirm("Reset today's meals, coffee, training, and steps?")) return;
     setMeals({ lunch: null, shake: null, dinner: null });
-    setCoffee([false, false, false, false, false]);
+    setCoffee(new Array((profile.coffeeSchedule || []).length).fill(false));
     setTrainingDay(null);
     setSteps(null);
   }
 
+  /* ----- Apply a profile template (Saidur / Blank / imported JSON) ----- */
+  function applyProfile(nextProfile, { resetGrocery = true } = {}) {
+    const cloned = cloneTemplate(nextProfile);
+    setProfile(cloned);
+    setCoffee(new Array((cloned.coffeeSchedule || []).length).fill(false));
+    if (resetGrocery) setGrocery(freshGrocery(cloned.groceryTemplate));
+    setTrainingDay(null);
+  }
+
   /* ----- Derived ----- */
-  const target = useMemo(() => targetForDay(trainingDay, steps), [trainingDay, steps]);
-  const totals = useMemo(() => calcDayTotals(meals), [meals]);
+  const target = useMemo(
+    () => targetForDay(profile, trainingDay, steps),
+    [profile, trainingDay, steps],
+  );
+  const totals = useMemo(
+    () => calcDayTotals(meals, profile.cheatBaselineKcal),
+    [meals, profile.cheatBaselineKcal],
+  );
   const lowItems = useMemo(() => lowStockItems(grocery), [grocery]);
+  const suggestedShakeKey = useMemo(() => {
+    const dt = profile.dayTypes?.find((d) => d.id === trainingDay);
+    return dt?.suggestShake || null;
+  }, [profile.dayTypes, trainingDay]);
 
   if (loading) {
     return (
@@ -1373,11 +1129,12 @@ export default function DietManager() {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <div className="max-w-3xl mx-auto px-4 md:px-6 py-6">
-        <Masthead date={date} />
+        <Masthead date={date} profile={profile} />
         <TabBar tab={tab} setTab={setTab} />
 
         {tab === "today" && (
           <TodayTab
+            profile={profile}
             trainingDay={trainingDay}
             setTrainingDay={setTrainingDay}
             steps={steps}
@@ -1388,6 +1145,7 @@ export default function DietManager() {
             coffee={coffee}
             setCoffee={setCoffee}
             lowItems={lowItems}
+            suggestedShakeKey={suggestedShakeKey}
             onSelectPreset={logPreset}
             onClearSlot={clearMeal}
             onCheatPrompt={() => setTab("cheat")}
@@ -1396,10 +1154,16 @@ export default function DietManager() {
           />
         )}
 
-        {tab === "week" && <WeekTab weekDays={weekDays} />}
+        {tab === "week" && <WeekTab weekDays={weekDays} dayTypes={profile.dayTypes} />}
 
         {tab === "cheat" && (
-          <CheatTab onLogCheat={logCheat} weekDays={weekDays} />
+          <CheatTab
+            onLogCheat={logCheat}
+            weekDays={weekDays}
+            cheatPresets={profile.cheatPresets}
+            fastFoodTips={profile.fastFoodTips}
+            cheatBaselineKcal={profile.cheatBaselineKcal}
+          />
         )}
 
         {tab === "grocery" && (
@@ -1411,6 +1175,15 @@ export default function DietManager() {
             plannedWeek={plannedWeek}
             setPlannedWeek={setPlannedWeek}
             onClearPlan={clearShoppingPlan}
+            profile={profile}
+          />
+        )}
+
+        {tab === "profile" && (
+          <ProfileTab
+            profile={profile}
+            setProfile={setProfile}
+            applyProfile={applyProfile}
           />
         )}
 
@@ -1434,6 +1207,7 @@ export default function DietManager() {
 ============================================================ */
 
 function TodayTab({
+  profile,
   trainingDay,
   setTrainingDay,
   steps,
@@ -1444,15 +1218,22 @@ function TodayTab({
   coffee,
   setCoffee,
   lowItems,
+  suggestedShakeKey,
   onSelectPreset,
   onClearSlot,
   onCheatPrompt,
   onViewGrocery,
   onResetToday,
 }) {
+  const eatingWindow = profile.eatingWindow ? ` · ${profile.eatingWindow}` : "";
   return (
     <div className="space-y-5">
-      <TrainingDayBadge trainingDay={trainingDay} onChange={setTrainingDay} />
+      <TrainingDayBadge
+        trainingDay={trainingDay}
+        onChange={setTrainingDay}
+        dayTypes={profile.dayTypes}
+        workoutAppUrl={profile.workoutAppUrl}
+      />
       <StepCounter steps={steps} setSteps={setSteps} />
       <LowStockBanner items={lowItems} onView={onViewGrocery} />
 
@@ -1473,34 +1254,34 @@ function TodayTab({
         />
       </div>
 
-      <CoffeeTracker coffee={coffee} setCoffee={setCoffee} />
+      <CoffeeTracker coffee={coffee} setCoffee={setCoffee} schedule={profile.coffeeSchedule} />
 
       <div className="grid grid-cols-1 gap-4">
         <MealSlot
           slot="lunch"
-          label="Lunch · ~1 PM"
+          label={`Lunch${eatingWindow}`}
           meal={meals.lunch}
-          presets={LUNCH_PRESETS}
-          trainingDay={trainingDay}
+          presets={profile.lunchPresets}
+          suggestedPresetKey={null}
           onSelect={(p) => onSelectPreset("lunch", p)}
           onClear={() => onClearSlot("lunch")}
           onCheatPrompt={onCheatPrompt}
         />
         <MealSlot
           slot="shake"
-          label="Shake · ~4-5 PM"
+          label="Shake"
           meal={meals.shake}
-          presets={SHAKE_PRESETS}
-          trainingDay={trainingDay}
+          presets={profile.shakePresets}
+          suggestedPresetKey={suggestedShakeKey}
           onSelect={(p) => onSelectPreset("shake", p)}
           onClear={() => onClearSlot("shake")}
         />
         <MealSlot
           slot="dinner"
-          label="Dinner · ~9 PM"
+          label="Dinner"
           meal={meals.dinner}
-          presets={DINNER_PRESETS}
-          trainingDay={trainingDay}
+          presets={profile.dinnerPresets}
+          suggestedPresetKey={null}
           onSelect={(p) => onSelectPreset("dinner", p)}
           onClear={() => onClearSlot("dinner")}
         />
@@ -1522,7 +1303,7 @@ function TodayTab({
    TAB: WEEK
 ============================================================ */
 
-function WeekTab({ weekDays }) {
+function WeekTab({ weekDays, dayTypes = [] }) {
   const totals = useMemo(() => calcWeekTotals(weekDays), [weekDays]);
   const comp = useMemo(() => weeklyCompensation(totals), [totals]);
   const monday = weekDays[0]?.date;
@@ -1563,7 +1344,7 @@ function WeekTab({ weekDays }) {
 
       <div className="grid grid-cols-7 gap-1">
         {weekDays.map((d) => {
-          const tdy = TRAINING_DAY_TYPES.find((t) => t.id === d.training);
+          const tdy = dayTypes.find((t) => t.id === d.training);
           const isToday = d.date === todayKey();
           return (
             <div
@@ -1656,8 +1437,9 @@ function SummaryCell({ label, value, accent }) {
    TAB: CHEAT
 ============================================================ */
 
-function CheatTab({ onLogCheat, weekDays }) {
+function CheatTab({ onLogCheat, weekDays, cheatPresets = {}, fastFoodTips = [] }) {
   const totals = useMemo(() => calcWeekTotals(weekDays), [weekDays]);
+  const cheatList = Object.values(cheatPresets);
   return (
     <div className="space-y-6">
       <div className="border-b-2 border-ink pb-2">
@@ -1681,34 +1463,42 @@ function CheatTab({ onLogCheat, weekDays }) {
         <ChefHat size={28} className="text-ink-muted" />
       </div>
 
-      <div>
-        <h3 className="font-display text-2xl font-black tracking-tight mb-3">Favorite cheat meals</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Object.values(CHEAT_PRESETS).map((p) => (
-            <CheatMealCard key={p.key} preset={p} onLog={onLogCheat} />
-          ))}
+      {cheatList.length > 0 ? (
+        <div>
+          <h3 className="font-display text-2xl font-black tracking-tight mb-3">Favorite cheat meals</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {cheatList.map((p) => (
+              <CheatMealCard key={p.key} preset={p} onLog={onLogCheat} />
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="border border-ink/30 p-6 text-center font-body italic text-ink-muted">
+          No cheat presets in this profile.
+        </div>
+      )}
 
-      <div>
-        <h3 className="font-display text-2xl font-black tracking-tight mb-1">
-          Healthy fast-food swaps
-        </h3>
-        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-3">
-          Reference only · not auto-logged
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {HEALTHY_FAST_FOOD_TIPS.map((t, i) => (
-            <div key={i} className="border border-ink p-3">
-              <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-accent">
-                {t.craving}
+      {fastFoodTips.length > 0 ? (
+        <div>
+          <h3 className="font-display text-2xl font-black tracking-tight mb-1">
+            Healthy fast-food swaps
+          </h3>
+          <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-3">
+            Reference only · not auto-logged
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {fastFoodTips.map((t, i) => (
+              <div key={i} className="border border-ink p-3">
+                <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-accent">
+                  {t.craving}
+                </div>
+                <div className="font-display text-lg font-bold leading-snug">{t.swap}</div>
+                <div className="font-body italic text-sm text-ink-muted mt-1">{t.why}</div>
               </div>
-              <div className="font-display text-lg font-bold leading-snug">{t.swap}</div>
-              <div className="font-body italic text-sm text-ink-muted mt-1">{t.why}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -1725,6 +1515,7 @@ function GroceryTab({
   plannedWeek,
   setPlannedWeek,
   onClearPlan,
+  profile,
 }) {
   const [view, setView] = useState("inventory"); // inventory | shopping | reset
   const [plannerOpen, setPlannerOpen] = useState(false);
@@ -1893,13 +1684,14 @@ function GroceryTab({
           plannedWeek={plannedWeek}
           setPlannedWeek={setPlannedWeek}
           onClose={() => setPlannerOpen(false)}
+          profile={profile}
         />
       )}
     </div>
   );
 }
 
-function WeekPlannerModal({ plannedWeek, setPlannedWeek, onClose }) {
+function WeekPlannerModal({ plannedWeek, setPlannedWeek, onClose, profile }) {
   const days = weekDateKeys();
   const [draft, setDraft] = useState(() => {
     const seed = {};
@@ -1934,9 +1726,9 @@ function WeekPlannerModal({ plannedWeek, setPlannedWeek, onClose }) {
   }
 
   const allOptions = (slot) => {
-    if (slot === "lunch") return Object.values(LUNCH_PRESETS);
-    if (slot === "shake") return Object.values(SHAKE_PRESETS);
-    if (slot === "dinner") return Object.values(DINNER_PRESETS);
+    if (slot === "lunch") return Object.values(profile?.lunchPresets || {});
+    if (slot === "shake") return Object.values(profile?.shakePresets || {});
+    if (slot === "dinner") return Object.values(profile?.dinnerPresets || {});
     return [];
   };
 
@@ -2111,5 +1903,330 @@ function BuildTab({ onLogMeal }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ============================================================
+   TAB: PROFILE (settings)
+============================================================ */
+
+function ProfileTab({ profile, setProfile, applyProfile }) {
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState(null);
+
+  function update(path, value) {
+    setProfile((prev) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      let cur = next;
+      for (let i = 0; i < path.length - 1; i++) {
+        if (cur[path[i]] == null) cur[path[i]] = {};
+        cur = cur[path[i]];
+      }
+      cur[path[path.length - 1]] = value;
+      return next;
+    });
+  }
+
+  function loadTemplate(id) {
+    const tpl = TEMPLATES[id];
+    if (!tpl) return;
+    if (
+      !confirm(
+        `Load the "${tpl.name}" template? Your personal info, targets, presets, grocery list, and coffee schedule will be replaced. Logged days/meals are kept.`,
+      )
+    ) {
+      return;
+    }
+    applyProfile(tpl);
+  }
+
+  function exportJson() {
+    const blob = JSON.stringify(profile, null, 2);
+    navigator.clipboard?.writeText(blob).catch(() => {});
+    return blob;
+  }
+
+  function tryImport() {
+    setImportError(null);
+    try {
+      const parsed = JSON.parse(importText);
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Not an object");
+      }
+      if (!Array.isArray(parsed.dayTypes)) {
+        throw new Error("Missing dayTypes array");
+      }
+      applyProfile(parsed);
+      setImportText("");
+    } catch (e) {
+      setImportError(e.message || "Invalid JSON");
+    }
+  }
+
+  const shakeKeys = Object.keys(profile.shakePresets || {});
+
+  return (
+    <div className="space-y-6">
+      <div className="border-b-2 border-ink pb-2">
+        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+          Settings
+        </div>
+        <h2 className="font-display text-3xl md:text-4xl font-black tracking-tight">Profile</h2>
+        <div className="font-body italic text-ink-muted text-sm mt-1">
+          Active template: <span className="font-bold not-italic">{profile.name || "—"}</span>
+          {profile.publicLabel ? ` · ${profile.publicLabel}` : ""}
+        </div>
+      </div>
+
+      {/* Templates */}
+      <Section title="Templates">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {Object.entries(TEMPLATES).map(([id, tpl]) => (
+            <button
+              key={id}
+              onClick={() => loadTemplate(id)}
+              className={`text-left border-2 p-3 hover:bg-ink hover:text-paper transition-colors ${
+                profile.id === id ? "border-accent" : "border-ink"
+              }`}
+            >
+              <div className="font-display text-xl font-bold">{tpl.name}</div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted group-hover:text-paper/70">
+                {tpl.publicLabel}
+              </div>
+            </button>
+          ))}
+        </div>
+        <p className="font-body italic text-sm text-ink-muted mt-2">
+          Loading a template replaces personal info, targets, presets, grocery items, and coffee
+          schedule. Your logged days and meals stay put.
+        </p>
+      </Section>
+
+      {/* Personal */}
+      <Section title="Personal info">
+        <Field label="Name">
+          <input
+            value={profile.name || ""}
+            onChange={(e) => update(["name"], e.target.value)}
+            className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+          />
+        </Field>
+        <Field label="Height (display)">
+          <input
+            value={profile.stats?.heightDisplay || ""}
+            onChange={(e) => update(["stats", "heightDisplay"], e.target.value)}
+            placeholder={'e.g. 5\'11"'}
+            className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+          />
+        </Field>
+        <Field label="Weight (kg)">
+          <input
+            type="number"
+            value={profile.stats?.weightKg ?? ""}
+            onChange={(e) =>
+              update(
+                ["stats", "weightKg"],
+                e.target.value === "" ? null : Number(e.target.value),
+              )
+            }
+            className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+          />
+        </Field>
+        <Field label="Sex">
+          <input
+            value={profile.stats?.sex || ""}
+            onChange={(e) => update(["stats", "sex"], e.target.value)}
+            className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+          />
+        </Field>
+        <Field label="Goal">
+          <input
+            value={profile.goal || ""}
+            onChange={(e) => update(["goal"], e.target.value)}
+            className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+          />
+        </Field>
+        <Field label="Eating window">
+          <input
+            value={profile.eatingWindow || ""}
+            onChange={(e) => update(["eatingWindow"], e.target.value)}
+            placeholder="e.g. 1 PM – 9 PM (16:8)"
+            className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+          />
+        </Field>
+        <Field label="Workout app URL">
+          <input
+            value={profile.workoutAppUrl || ""}
+            onChange={(e) => update(["workoutAppUrl"], e.target.value)}
+            placeholder="https://…"
+            className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+          />
+        </Field>
+      </Section>
+
+      {/* Targets */}
+      <Section title="Targets">
+        <Field label="Protein target (g/day)">
+          <input
+            type="number"
+            value={profile.proteinTarget ?? 0}
+            onChange={(e) => update(["proteinTarget"], Number(e.target.value) || 0)}
+            className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+          />
+        </Field>
+        <Field label="Cheat baseline kcal">
+          <input
+            type="number"
+            value={profile.cheatBaselineKcal ?? 0}
+            onChange={(e) => update(["cheatBaselineKcal"], Number(e.target.value) || 0)}
+            className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+          />
+        </Field>
+      </Section>
+
+      {/* Step adjustment */}
+      <Section title="Step adjustment">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Low threshold (steps)">
+            <input
+              type="number"
+              value={profile.stepAdjust?.lowThreshold ?? 0}
+              onChange={(e) => update(["stepAdjust", "lowThreshold"], Number(e.target.value) || 0)}
+              className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+            />
+          </Field>
+          <Field label="High threshold (steps)">
+            <input
+              type="number"
+              value={profile.stepAdjust?.highThreshold ?? 0}
+              onChange={(e) => update(["stepAdjust", "highThreshold"], Number(e.target.value) || 0)}
+              className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+            />
+          </Field>
+          <Field label="Below-low kcal delta">
+            <input
+              type="number"
+              value={profile.stepAdjust?.lowDelta ?? 0}
+              onChange={(e) => update(["stepAdjust", "lowDelta"], Number(e.target.value) || 0)}
+              className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+            />
+          </Field>
+          <Field label="Above-high kcal delta">
+            <input
+              type="number"
+              value={profile.stepAdjust?.highDelta ?? 0}
+              onChange={(e) => update(["stepAdjust", "highDelta"], Number(e.target.value) || 0)}
+              className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+            />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Day types */}
+      <Section title="Day types">
+        <div className="space-y-2">
+          {(profile.dayTypes || []).map((dt, idx) => (
+            <div key={dt.id} className="border border-ink p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">{dt.icon}</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
+                  id: {dt.id}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Field label="Label">
+                  <input
+                    value={dt.label}
+                    onChange={(e) => update(["dayTypes", idx, "label"], e.target.value)}
+                    className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+                  />
+                </Field>
+                <Field label="kcal target">
+                  <input
+                    type="number"
+                    value={dt.target}
+                    onChange={(e) => update(["dayTypes", idx, "target"], Number(e.target.value) || 0)}
+                    className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+                  />
+                </Field>
+                <Field label="Suggested shake">
+                  <select
+                    value={dt.suggestShake || ""}
+                    onChange={(e) =>
+                      update(["dayTypes", idx, "suggestShake"], e.target.value || null)
+                    }
+                    className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+                  >
+                    <option value="">— none —</option>
+                    {shakeKeys.map((k) => (
+                      <option key={k} value={k}>
+                        {profile.shakePresets[k]?.name || k}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="font-body italic text-sm text-ink-muted mt-2">
+          Adding/removing day types or editing presets, grocery, and cheat meals is JSON-only for
+          now — see the import/export panel below.
+        </p>
+      </Section>
+
+      {/* Advanced */}
+      <Section title="Advanced — full profile JSON">
+        <div className="space-y-2">
+          <button
+            onClick={exportJson}
+            className="px-3 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper"
+          >
+            Copy current profile to clipboard
+          </button>
+          <textarea
+            rows={6}
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            placeholder='Paste a profile JSON here, then "Apply"'
+            className="w-full border border-ink bg-paper p-2 font-mono text-xs focus:outline-none"
+          />
+          {importError ? (
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-accent">
+              {importError}
+            </div>
+          ) : null}
+          <button
+            onClick={tryImport}
+            disabled={!importText.trim()}
+            className="px-3 py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent disabled:opacity-30"
+          >
+            Apply imported JSON
+          </button>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="font-display text-2xl font-black tracking-tight border-b border-ink/30 pb-1">
+        {title}
+      </h3>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="block">
+      <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+        {label}
+      </span>
+      <div className="mt-1">{children}</div>
+    </label>
   );
 }
