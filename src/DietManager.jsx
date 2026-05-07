@@ -263,6 +263,13 @@ function freshGrocery(template = []) {
   return template.map((g) => ({ ...g, currentQty: g.initialQty }));
 }
 
+function slugify(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function fmtNum(n) {
   if (n == null || Number.isNaN(n)) return "—";
   return Math.round(n).toLocaleString();
@@ -1148,6 +1155,31 @@ export default function DietManager() {
     setSteps(null);
   }
 
+  /* ----- Preset management (lunch / shake / dinner) ----- */
+  function addPreset(slot, preset) {
+    const slotKey = `${slot}Presets`;
+    setProfile((prev) => {
+      const existing = prev[slotKey] || {};
+      const baseSlug = slugify(preset.name) || slot;
+      let key = preset.key || baseSlug;
+      let i = 1;
+      while (existing[key]) key = `${baseSlug}_${i++}`;
+      return {
+        ...prev,
+        [slotKey]: { ...existing, [key]: { ...preset, key } },
+      };
+    });
+  }
+
+  function removePreset(slot, key) {
+    const slotKey = `${slot}Presets`;
+    setProfile((prev) => {
+      const existing = { ...(prev[slotKey] || {}) };
+      delete existing[key];
+      return { ...prev, [slotKey]: existing };
+    });
+  }
+
   /* ----- Apply a profile template (Saidur / Blank / imported JSON) ----- */
   function applyProfile(nextProfile, { resetGrocery = true } = {}) {
     const cloned = cloneTemplate(nextProfile);
@@ -1240,10 +1272,17 @@ export default function DietManager() {
             applyProfile={applyProfile}
             apiKey={apiKey}
             setApiKey={setApiKey}
+            removePreset={removePreset}
           />
         )}
 
-        {tab === "build" && <BuildTab onLogMeal={logMeal} apiKey={apiKey} />}
+        {tab === "build" && (
+          <BuildTab
+            onLogMeal={logMeal}
+            onSavePreset={addPreset}
+            apiKey={apiKey}
+          />
+        )}
 
         <footer className="mt-10 pt-6 border-t-2 border-ink">
           <p className="font-display italic text-center text-lg md:text-xl text-ink-muted">
@@ -1870,10 +1909,13 @@ function WeekPlannerModal({ plannedWeek, setPlannedWeek, onClose, profile }) {
    TAB: BUILD
 ============================================================ */
 
-function BuildTab({ onLogMeal, apiKey }) {
+function BuildTab({ onLogMeal, onSavePreset, apiKey }) {
   const [items, setItems] = useState([]);
   const [name, setName] = useState("Custom meal");
+  const [icon, setIcon] = useState("🍽️");
+  const [note, setNote] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [savedAs, setSavedAs] = useState(null); // small "saved!" toast
   const totals = useMemo(() => calcMeal(items), [items]);
 
   function addItem(item) {
@@ -1883,17 +1925,34 @@ function BuildTab({ onLogMeal, apiKey }) {
   function removeItem(idx) {
     setItems((prev) => prev.filter((_, i) => i !== idx));
   }
+  function reset() {
+    setItems([]);
+    setName("Custom meal");
+    setIcon("🍽️");
+    setNote("");
+  }
   function saveAs(slot) {
     if (!items.length) return;
     onLogMeal(slot, {
       key: "custom",
       name,
-      icon: "✍",
+      icon: icon || "🍽️",
+      note: note || null,
       items: items.map((i) => ({ ...i })),
       isCheat: false,
     });
-    setItems([]);
-    setName("Custom meal");
+    reset();
+  }
+  function savePreset(slot) {
+    if (!items.length || !name.trim()) return;
+    onSavePreset(slot, {
+      name: name.trim(),
+      icon: icon || "🍽️",
+      note: note.trim() || undefined,
+      items: items.map((i) => ({ ...i })),
+    });
+    setSavedAs(`${slot} preset saved`);
+    setTimeout(() => setSavedAs(null), 2200);
   }
 
   function logFromAi(slot, ai, quantity) {
@@ -1955,11 +2014,27 @@ function BuildTab({ onLogMeal, apiKey }) {
       </div>
 
       <div className="border-2 border-ink p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            value={icon}
+            onChange={(e) => setIcon(e.target.value)}
+            maxLength={4}
+            placeholder="🍽️"
+            aria-label="Icon"
+            className="w-12 text-center text-2xl bg-paper border border-ink py-1 focus:outline-none"
+          />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="flex-1 font-display text-2xl font-bold bg-paper border-b border-ink py-1 focus:outline-none"
+            placeholder="Meal name"
+          />
+        </div>
         <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full font-display text-2xl font-bold bg-paper border-b border-ink py-1 mb-3 focus:outline-none"
-          placeholder="Meal name"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Optional note (e.g. 'air fry only')"
+          className="w-full font-body text-sm bg-paper border-b border-ink/30 py-1 mb-3 focus:outline-none"
         />
         <ul className="text-sm space-y-1 mb-3">
           {items.length === 0 ? (
@@ -1992,21 +2067,53 @@ function BuildTab({ onLogMeal, apiKey }) {
 
       <FoodPicker onAdd={addItem} />
 
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { id: "lunch", label: "Save as Lunch" },
-          { id: "shake", label: "Save as Shake" },
-          { id: "dinner", label: "Save as Dinner" },
-        ].map((b) => (
-          <button
-            key={b.id}
-            onClick={() => saveAs(b.id)}
-            disabled={!items.length}
-            className="py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent disabled:opacity-30"
-          >
-            {b.label}
-          </button>
-        ))}
+      <div className="space-y-2">
+        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+          Log just for today
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { id: "lunch", label: "Log Lunch" },
+            { id: "shake", label: "Log Shake" },
+            { id: "dinner", label: "Log Dinner" },
+          ].map((b) => (
+            <button
+              key={b.id}
+              onClick={() => saveAs(b.id)}
+              disabled={!items.length}
+              className="py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent disabled:opacity-30"
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+          Save as a reusable preset
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { id: "lunch", label: "+ Lunch preset" },
+            { id: "shake", label: "+ Shake preset" },
+            { id: "dinner", label: "+ Dinner preset" },
+          ].map((b) => (
+            <button
+              key={b.id}
+              onClick={() => savePreset(b.id)}
+              disabled={!items.length || !name.trim()}
+              className="py-2 border-2 border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper disabled:opacity-30"
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+        {savedAs ? (
+          <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-good">
+            ✓ {savedAs} — appears in Today tab and Profile → Presets
+          </div>
+        ) : null}
       </div>
 
       {photoOpen && (
@@ -2237,7 +2344,7 @@ function PhotoMealModal({ apiKey, onClose, onLog }) {
    TAB: PROFILE (settings)
 ============================================================ */
 
-function ProfileTab({ profile, setProfile, applyProfile, apiKey, setApiKey }) {
+function ProfileTab({ profile, setProfile, applyProfile, apiKey, setApiKey, removePreset }) {
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState(null);
   const [keyDraft, setKeyDraft] = useState(apiKey || "");
@@ -2502,6 +2609,72 @@ function ProfileTab({ profile, setProfile, applyProfile, apiKey, setApiKey }) {
           Adding/removing day types or editing presets, grocery, and cheat meals is JSON-only for
           now — see the import/export panel below.
         </p>
+      </Section>
+
+      {/* Presets */}
+      <Section title="Meal presets">
+        <p className="font-body text-sm text-ink-muted">
+          These appear as quick-add cards on the Today tab. Compose new ones in the Build tab and
+          tap "+ Lunch / Shake / Dinner preset".
+        </p>
+        {[
+          { slot: "lunch", label: "Lunch", presets: profile.lunchPresets },
+          { slot: "shake", label: "Shake", presets: profile.shakePresets },
+          { slot: "dinner", label: "Dinner", presets: profile.dinnerPresets },
+        ].map(({ slot, label, presets }) => {
+          const list = Object.values(presets || {});
+          return (
+            <div key={slot} className="border border-ink p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-display text-lg font-bold">{label}</h4>
+                <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+                  {list.length} preset{list.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {list.length === 0 ? (
+                <div className="font-body italic text-sm text-ink-muted">
+                  No {label.toLowerCase()} presets yet.
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {list.map((p) => {
+                    const c = calcMeal(p.items);
+                    return (
+                      <li
+                        key={p.key}
+                        className="flex items-center gap-3 border border-ink/30 p-2"
+                      >
+                        <span className="text-2xl select-none">{p.icon || "🍽️"}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-display text-base font-bold leading-tight">
+                            {p.name}
+                          </div>
+                          <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+                            {c.kcal} kcal · {c.protein}g protein
+                            {p.note ? ` · ${p.note}` : ""}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (
+                              confirm(`Delete "${p.name}" from ${label.toLowerCase()} presets?`)
+                            ) {
+                              removePreset(slot, p.key);
+                            }
+                          }}
+                          className="text-ink-muted hover:text-accent"
+                          aria-label="Delete preset"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </Section>
 
       {/* AI photo analysis */}
