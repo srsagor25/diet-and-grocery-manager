@@ -107,6 +107,106 @@ export async function analyzeFoodPhoto({
   return out;
 }
 
+// -----------------------------------------------------------------
+// Eating-out coach: text-only Claude call that suggests orders fitting
+// the remaining macro budget for the day, plus rest-of-day advice.
+// -----------------------------------------------------------------
+
+const EAT_OUT_PROMPT = ({ target, logged, remaining, slot, location, notes, eatingWindow }) => `You are a nutrition coach. The user is eating out and wants help ordering.
+
+Daily targets:        ${target.kcal} kcal, ${target.protein}g protein
+Logged so far today:  ${logged.kcal} kcal, ${logged.protein}g protein
+Remaining for today:  ${remaining.kcal} kcal, ${remaining.protein}g protein
+This meal slot:       ${slot}${eatingWindow ? ` (eating window ${eatingWindow})` : ""}
+Restaurant / cuisine: ${location || "unspecified"}
+User notes:           ${notes || "—"}
+
+Suggest 3 distinct orders the user could realistically place. Aim each order at ~60–95% of the remaining kcal for this meal (leave room for an end-of-day snack), and prioritise hitting remaining protein. Reflect typical menu items at the stated cuisine/restaurant. Avoid suggesting items that obviously blow the kcal budget.
+
+Then give one short paragraph of advice on how to balance the rest of the day (e.g. swap a planned shake, add eggs at breakfast tomorrow, hit protein with a low-cal source after dinner).
+
+Return ONLY a single JSON object — no markdown, no commentary, no code fences. Use these exact keys:
+{
+  "suggestions": [
+    { "name": "string", "kcal": integer, "protein_g": number, "fat_g": number, "carbs_g": number, "why": "1 short sentence" },
+    { "name": "string", "kcal": integer, "protein_g": number, "fat_g": number, "carbs_g": number, "why": "1 short sentence" },
+    { "name": "string", "kcal": integer, "protein_g": number, "fat_g": number, "carbs_g": number, "why": "1 short sentence" }
+  ],
+  "advice": "1-2 sentences"
+}`;
+
+export async function suggestEatOut({
+  apiKey,
+  model = DEFAULT_MODEL,
+  target,
+  logged,
+  slot,
+  location,
+  notes,
+  eatingWindow,
+}) {
+  if (!apiKey) throw new Error("Anthropic API key is not set.");
+  const remaining = {
+    kcal: Math.max(0, (target?.kcal || 0) - (logged?.kcal || 0)),
+    protein: Math.max(0, (target?.protein || 0) - (logged?.protein || 0)),
+  };
+
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "anthropic-dangerous-direct-browser-access": "true",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 768,
+      messages: [
+        {
+          role: "user",
+          content: EAT_OUT_PROMPT({
+            target,
+            logged,
+            remaining,
+            slot,
+            location,
+            notes,
+            eatingWindow,
+          }),
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Anthropic API ${res.status}: ${body.slice(0, 240) || res.statusText}`);
+  }
+
+  const data = await res.json();
+  const text = data?.content?.find((c) => c.type === "text")?.text || "";
+  const parsed = extractJson(text);
+  if (!parsed || !Array.isArray(parsed.suggestions)) {
+    throw new Error("Could not parse suggestions from model response.");
+  }
+
+  const suggestions = parsed.suggestions.slice(0, 3).map((s) => ({
+    name: String(s.name ?? "Suggested order"),
+    kcal: Math.max(0, Math.round(Number(s.kcal) || 0)),
+    protein_g: Math.max(0, Number(s.protein_g) || 0),
+    fat_g: Math.max(0, Number(s.fat_g) || 0),
+    carbs_g: Math.max(0, Number(s.carbs_g) || 0),
+    why: s.why ? String(s.why) : "",
+  }));
+
+  return {
+    suggestions,
+    advice: parsed.advice ? String(parsed.advice) : "",
+    remaining,
+  };
+}
+
 // Resize an image File to JPEG base64 with the long side ≤ maxDim.
 // 1568px is a sweet spot for Anthropic vision — large enough to read
 // fine detail, small enough to keep latency and cost down.

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 import { FOODS, GROCERY_CATEGORIES, TEMPLATES, SAIDUR_PROFILE, cloneTemplate } from "./profiles.js";
-import { analyzeFoodPhoto, fileToResizedBase64 } from "./aiVision.js";
+import { analyzeFoodPhoto, fileToResizedBase64, suggestEatOut } from "./aiVision.js";
 
 
 /* ============================================================
@@ -597,6 +597,9 @@ function MealSlot({
   onSelect,
   onClear,
   onCheatPrompt,
+  onOpenPhotoMeal,
+  onOpenEatOut,
+  aiEnabled,
 }) {
   const totals = meal ? calcMeal(meal.items) : null;
   const showCheatLink = slot === "lunch" && !meal;
@@ -690,6 +693,40 @@ function MealSlot({
           <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
             Quick add
           </div>
+
+          {(onOpenPhotoMeal || onOpenEatOut) ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+              {onOpenPhotoMeal ? (
+                <button
+                  onClick={() => onOpenPhotoMeal(slot)}
+                  className="border-2 border-accent bg-accent/5 p-3 hover:bg-accent hover:text-paper text-left transition-colors group"
+                  title={aiEnabled ? "" : "Set your Anthropic API key in Profile first"}
+                >
+                  <div className="font-display text-base font-bold flex items-center gap-2">
+                    <Camera size={16} /> Photo meal
+                  </div>
+                  <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-muted group-hover:text-paper/70">
+                    Snap or upload · AI macros
+                  </div>
+                </button>
+              ) : null}
+              {onOpenEatOut ? (
+                <button
+                  onClick={() => onOpenEatOut(slot)}
+                  className="border-2 border-ink p-3 hover:bg-ink hover:text-paper text-left transition-colors group"
+                  title={aiEnabled ? "" : "Set your Anthropic API key in Profile first"}
+                >
+                  <div className="font-display text-base font-bold flex items-center gap-2">
+                    🍽️ Eating out
+                  </div>
+                  <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-muted group-hover:text-paper/70">
+                    Suggest orders that fit my macros
+                  </div>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           {Object.values(presets || {}).length === 0 ? (
             <div className="font-body italic text-sm text-ink-muted">
               No presets yet — use the Build tab to create one.
@@ -1050,6 +1087,8 @@ export default function DietManager() {
   const [weekDays, setWeekDays] = useState([]);
   const [plannedWeek, setPlannedWeek] = useState({});
   const [manualShopping, setManualShopping] = useState([]);
+  const [photoModal, setPhotoModal] = useState(null); // null | { defaultSlot? }
+  const [eatOutModal, setEatOutModal] = useState(null); // null | { defaultSlot? }
   const [loading, setLoading] = useState(true);
 
   /* ----- Initial load ----- */
@@ -1210,6 +1249,60 @@ export default function DietManager() {
       icon: preset.icon,
       note: preset.note,
       items: preset.items.map((i) => ({ ...i })),
+      isCheat: false,
+    };
+    logMeal(slot, meal);
+  }
+
+  function logFromAiResult(slot, ai, quantity) {
+    const meal = {
+      key: "ai_photo",
+      name: ai.name || "Photo meal",
+      icon: "📷",
+      note: ai.notes || null,
+      items: [
+        {
+          food: "ai_photo",
+          amount: 1,
+          direct: {
+            kcal: ai.kcal,
+            protein: ai.protein_g,
+            fat: ai.fat_g,
+            carbs: ai.carbs_g,
+            displayName: `${ai.name}${quantity ? ` · ${quantity}` : ""}`,
+            unit: "serving",
+            confidence: ai.confidence,
+          },
+        },
+      ],
+      isCheat: false,
+    };
+    logMeal(slot, meal);
+  }
+
+  function logFromEatOut(slot, suggestion, location) {
+    const meal = {
+      key: "eat_out",
+      name: suggestion.name || "Restaurant order",
+      icon: "🍽️",
+      note: suggestion.why || (location ? `at ${location}` : null),
+      items: [
+        {
+          food: "eat_out",
+          amount: 1,
+          direct: {
+            kcal: suggestion.kcal,
+            protein: suggestion.protein_g,
+            fat: suggestion.fat_g,
+            carbs: suggestion.carbs_g,
+            displayName: location
+              ? `${suggestion.name} · ${location}`
+              : suggestion.name,
+            unit: "order",
+            confidence: "medium",
+          },
+        },
+      ],
       isCheat: false,
     };
     logMeal(slot, meal);
@@ -1414,6 +1507,9 @@ export default function DietManager() {
             onCheatPrompt={() => setTab("cheat")}
             onViewGrocery={() => setTab("grocery")}
             onResetToday={resetToday}
+            onOpenPhotoMeal={(s) => setPhotoModal({ defaultSlot: s })}
+            onOpenEatOut={(s) => setEatOutModal({ defaultSlot: s })}
+            apiKey={apiKey}
           />
         )}
 
@@ -1464,7 +1560,35 @@ export default function DietManager() {
           <BuildTab
             onLogMeal={logMeal}
             onSavePreset={addPreset}
+            onOpenPhotoMeal={(s) => setPhotoModal({ defaultSlot: s })}
             apiKey={apiKey}
+          />
+        )}
+
+        {photoModal && (
+          <PhotoMealModal
+            apiKey={apiKey}
+            defaultSlot={photoModal.defaultSlot}
+            onClose={() => setPhotoModal(null)}
+            onLog={(slot, ai, qty) => {
+              logFromAiResult(slot, ai, qty);
+              setPhotoModal(null);
+            }}
+          />
+        )}
+
+        {eatOutModal && (
+          <EatOutModal
+            apiKey={apiKey}
+            profile={profile}
+            target={target}
+            totals={totals}
+            defaultSlot={eatOutModal.defaultSlot}
+            onClose={() => setEatOutModal(null)}
+            onLog={(slot, suggestion, location) => {
+              logFromEatOut(slot, suggestion, location);
+              setEatOutModal(null);
+            }}
           />
         )}
 
@@ -1503,6 +1627,9 @@ function TodayTab({
   onCheatPrompt,
   onViewGrocery,
   onResetToday,
+  onOpenPhotoMeal,
+  onOpenEatOut,
+  apiKey,
 }) {
   const eatingWindow = profile.eatingWindow ? ` · ${profile.eatingWindow}` : "";
   return (
@@ -1545,6 +1672,9 @@ function TodayTab({
           onSelect={(p) => onSelectPreset("lunch", p)}
           onClear={() => onClearSlot("lunch")}
           onCheatPrompt={onCheatPrompt}
+          onOpenPhotoMeal={onOpenPhotoMeal}
+          onOpenEatOut={onOpenEatOut}
+          aiEnabled={!!apiKey}
         />
         <MealSlot
           slot="shake"
@@ -1554,6 +1684,9 @@ function TodayTab({
           suggestedPresetKey={suggestedShakeKey}
           onSelect={(p) => onSelectPreset("shake", p)}
           onClear={() => onClearSlot("shake")}
+          onOpenPhotoMeal={onOpenPhotoMeal}
+          onOpenEatOut={onOpenEatOut}
+          aiEnabled={!!apiKey}
         />
         <MealSlot
           slot="dinner"
@@ -1563,6 +1696,9 @@ function TodayTab({
           suggestedPresetKey={null}
           onSelect={(p) => onSelectPreset("dinner", p)}
           onClear={() => onClearSlot("dinner")}
+          onOpenPhotoMeal={onOpenPhotoMeal}
+          onOpenEatOut={onOpenEatOut}
+          aiEnabled={!!apiKey}
         />
       </div>
 
@@ -2443,12 +2579,11 @@ function WeekPlannerModal({ plannedWeek, setPlannedWeek, onClose, profile }) {
    TAB: BUILD
 ============================================================ */
 
-function BuildTab({ onLogMeal, onSavePreset, apiKey }) {
+function BuildTab({ onLogMeal, onSavePreset, onOpenPhotoMeal, apiKey }) {
   const [items, setItems] = useState([]);
   const [name, setName] = useState("Custom meal");
   const [icon, setIcon] = useState("🍽️");
   const [note, setNote] = useState("");
-  const [photoOpen, setPhotoOpen] = useState(false);
   const [savedAs, setSavedAs] = useState(null); // small "saved!" toast
   const totals = useMemo(() => calcMeal(items), [items]);
 
@@ -2489,32 +2624,6 @@ function BuildTab({ onLogMeal, onSavePreset, apiKey }) {
     setTimeout(() => setSavedAs(null), 2200);
   }
 
-  function logFromAi(slot, ai, quantity) {
-    const meal = {
-      key: "ai_photo",
-      name: ai.name || "Photo meal",
-      icon: "📷",
-      note: ai.notes || null,
-      items: [
-        {
-          food: "ai_photo",
-          amount: 1,
-          direct: {
-            kcal: ai.kcal,
-            protein: ai.protein_g,
-            fat: ai.fat_g,
-            carbs: ai.carbs_g,
-            displayName: `${ai.name}${quantity ? ` · ${quantity}` : ""}`,
-            unit: "serving",
-            confidence: ai.confidence,
-          },
-        },
-      ],
-      isCheat: false,
-    };
-    onLogMeal(slot, meal);
-  }
-
   return (
     <div className="space-y-5">
       <div className="border-b-2 border-ink pb-2">
@@ -2535,7 +2644,7 @@ function BuildTab({ onLogMeal, onSavePreset, apiKey }) {
           </div>
         </div>
         <button
-          onClick={() => setPhotoOpen(true)}
+          onClick={() => onOpenPhotoMeal && onOpenPhotoMeal(null)}
           className="w-full py-2 bg-accent text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink flex items-center justify-center gap-2"
         >
           <Sparkles size={12} /> Analyze a food photo
@@ -2649,17 +2758,6 @@ function BuildTab({ onLogMeal, onSavePreset, apiKey }) {
           </div>
         ) : null}
       </div>
-
-      {photoOpen && (
-        <PhotoMealModal
-          apiKey={apiKey}
-          onClose={() => setPhotoOpen(false)}
-          onLog={(slot, ai, qty) => {
-            logFromAi(slot, ai, qty);
-            setPhotoOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -2668,7 +2766,7 @@ function BuildTab({ onLogMeal, onSavePreset, apiKey }) {
    PhotoMealModal — upload, analyze, edit, save
 ============================================================ */
 
-function PhotoMealModal({ apiKey, onClose, onLog }) {
+function PhotoMealModal({ apiKey, onClose, onLog, defaultSlot }) {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [quantity, setQuantity] = useState("");
@@ -2851,21 +2949,243 @@ function PhotoMealModal({ apiKey, onClose, onLog }) {
               {result.notes ? (
                 <div className="font-body italic text-sm text-ink-muted">{result.notes}</div>
               ) : null}
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: "lunch", label: "Log lunch" },
-                  { id: "shake", label: "Log shake" },
-                  { id: "dinner", label: "Log dinner" },
-                ].map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() => onLog(b.id, result, quantity)}
-                    className="py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent"
-                  >
-                    {b.label}
-                  </button>
-                ))}
+              {defaultSlot ? (
+                <button
+                  onClick={() => onLog(defaultSlot, result, quantity)}
+                  className="w-full py-3 bg-ink text-paper font-mono text-[11px] uppercase tracking-[0.25em] hover:bg-accent"
+                >
+                  Log as {defaultSlot}
+                </button>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "lunch", label: "Log lunch" },
+                    { id: "shake", label: "Log shake" },
+                    { id: "dinner", label: "Log dinner" },
+                  ].map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => onLog(b.id, result, quantity)}
+                      className="py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent"
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   EatOutModal — Claude suggests orders that fit remaining macros
+============================================================ */
+
+function EatOutModal({ apiKey, profile, target, totals, defaultSlot, onClose, onLog }) {
+  const [slot, setSlot] = useState(defaultSlot || "lunch");
+  const [location, setLocation] = useState("");
+  const [notes, setNotes] = useState("");
+  const [loadingSug, setLoadingSug] = useState(false);
+  const [error, setError] = useState(null);
+  const [data, setData] = useState(null);
+
+  const remaining = useMemo(
+    () => ({
+      kcal: Math.max(0, (target?.kcal || 0) - (totals?.kcal || 0)),
+      protein: Math.max(0, (target?.protein || 0) - (totals?.protein || 0)),
+    }),
+    [target, totals],
+  );
+
+  async function getSuggestions() {
+    if (!apiKey) {
+      setError("Set your Anthropic API key in the Profile tab.");
+      return;
+    }
+    if (!location.trim()) {
+      setError("Tell me where you're eating (cuisine or restaurant).");
+      return;
+    }
+    setError(null);
+    setLoadingSug(true);
+    try {
+      const result = await suggestEatOut({
+        apiKey,
+        target,
+        logged: { kcal: totals.kcal, protein: totals.protein },
+        slot,
+        location: location.trim(),
+        notes: notes.trim(),
+        eatingWindow: profile?.eatingWindow,
+      });
+      setData(result);
+    } catch (e) {
+      setError(e.message || "Could not get suggestions.");
+    } finally {
+      setLoadingSug(false);
+    }
+  }
+
+  function pickSuggestion(s) {
+    onLog(slot, s, location.trim());
+  }
+
+  return (
+    <div className="fixed inset-0 bg-ink/60 z-50 flex items-end md:items-center justify-center p-2 md:p-6">
+      <div className="bg-paper border-2 border-ink w-full max-w-xl max-h-[95vh] overflow-y-auto">
+        <div className="sticky top-0 bg-paper border-b-2 border-ink px-4 py-3 flex items-center justify-between">
+          <h3 className="font-display text-2xl font-black tracking-tight flex items-center gap-2">
+            🍽️ Eating out
+          </h3>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Macros remaining */}
+          <div className="border border-ink p-3 grid grid-cols-3 gap-3">
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-ink-muted">
+                Logged
               </div>
+              <div className="font-display text-xl font-black leading-none">
+                {fmtNum(totals?.kcal)}
+              </div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-ink-muted">
+                {Math.round(totals?.protein || 0)}g protein
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-ink-muted">
+                Target
+              </div>
+              <div className="font-display text-xl font-black leading-none">
+                {fmtNum(target?.kcal)}
+              </div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-ink-muted">
+                {Math.round(target?.protein || 0)}g protein
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-accent">
+                Remaining
+              </div>
+              <div className="font-display text-xl font-black leading-none" style={{ color: "#c44827" }}>
+                {fmtNum(remaining.kcal)}
+              </div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.25em] text-accent">
+                {Math.round(remaining.protein)}g protein
+              </div>
+            </div>
+          </div>
+
+          <Field label="Logging as">
+            <div className="flex border border-ink">
+              {["lunch", "shake", "dinner"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSlot(s)}
+                  className={`flex-1 py-2 font-mono text-[10px] uppercase tracking-[0.2em] ${
+                    slot === s ? "bg-ink text-paper" : "hover:bg-ink/5"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Restaurant or cuisine">
+            <input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="e.g. Bengali, Italian, Pizza Hut, Madchef"
+              className="w-full border border-ink bg-paper px-2 py-2 font-body text-base focus:outline-none"
+            />
+          </Field>
+
+          <Field label="Notes (optional)">
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. no rice, share an appetiser, 2 of us"
+              className="w-full border border-ink bg-paper px-2 py-2 font-body text-base focus:outline-none"
+            />
+          </Field>
+
+          {error ? (
+            <div className="border border-accent bg-accent/5 p-2 font-mono text-[11px] text-accent">
+              {error}
+            </div>
+          ) : null}
+
+          <button
+            onClick={getSuggestions}
+            disabled={loadingSug}
+            className="w-full py-3 bg-accent text-paper font-mono text-[11px] uppercase tracking-[0.25em] hover:bg-ink disabled:opacity-30 flex items-center justify-center gap-2"
+          >
+            {loadingSug ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Asking the coach…
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} /> {data ? "Refresh suggestions" : "Get suggestions"}
+              </>
+            )}
+          </button>
+
+          {data ? (
+            <div className="space-y-3">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
+                  Suggested orders
+                </div>
+                <div className="space-y-2">
+                  {data.suggestions.map((s, i) => (
+                    <div key={i} className="border-2 border-ink p-3">
+                      <div className="flex items-baseline justify-between gap-2 mb-1">
+                        <div className="font-display text-lg font-bold leading-tight">
+                          {s.name}
+                        </div>
+                        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted whitespace-nowrap">
+                          {s.kcal} kcal · {s.protein_g}g
+                        </div>
+                      </div>
+                      <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
+                        {Math.round(s.fat_g)}g fat · {Math.round(s.carbs_g)}g carbs
+                      </div>
+                      {s.why ? (
+                        <div className="font-body italic text-sm text-ink-muted mb-2">
+                          {s.why}
+                        </div>
+                      ) : null}
+                      <button
+                        onClick={() => pickSuggestion(s)}
+                        className="w-full py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent"
+                      >
+                        Log this as {slot}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {data.advice ? (
+                <div className="border-2 border-good p-3 bg-good/5">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-good mb-1">
+                    Advice for the rest of the day
+                  </div>
+                  <div className="font-body text-sm">{data.advice}</div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
