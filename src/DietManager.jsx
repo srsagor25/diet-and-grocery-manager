@@ -16,9 +16,13 @@ import {
   ArrowRight,
   X,
   Check,
+  Camera,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 
 import { FOODS, GROCERY_CATEGORIES, TEMPLATES, SAIDUR_PROFILE, cloneTemplate } from "./profiles.js";
+import { analyzeFoodPhoto, fileToResizedBase64 } from "./aiVision.js";
 
 
 /* ============================================================
@@ -51,13 +55,31 @@ function weekDateKeys() {
 function calcMeal(items) {
   let kcal = 0;
   let protein = 0;
+  let fat = 0;
+  let carbs = 0;
+  let hasDirect = false;
   for (const it of items || []) {
+    if (it.direct) {
+      hasDirect = true;
+      const a = it.amount ?? 1;
+      kcal += (it.direct.kcal || 0) * a;
+      protein += (it.direct.protein || 0) * a;
+      fat += (it.direct.fat || 0) * a;
+      carbs += (it.direct.carbs || 0) * a;
+      continue;
+    }
     const f = FOODS[it.food];
     if (!f) continue;
     kcal += f.kcal * it.amount;
     protein += f.protein * it.amount;
   }
-  return { kcal: Math.round(kcal), protein: Math.round(protein * 10) / 10 };
+  return {
+    kcal: Math.round(kcal),
+    protein: Math.round(protein * 10) / 10,
+    fat: Math.round(fat * 10) / 10,
+    carbs: Math.round(carbs * 10) / 10,
+    hasDirect,
+  };
 }
 
 function calcDayTotals(meals, baselineKcal = 1019) {
@@ -613,6 +635,25 @@ function MealSlot({
           </div>
           <ul className="text-sm space-y-1 mb-3">
             {meal.items.map((it, i) => {
+              if (it.direct) {
+                const a = it.amount ?? 1;
+                const display = it.direct.displayName || "Custom item";
+                return (
+                  <li key={i} className="flex justify-between font-body">
+                    <span>
+                      {display}
+                      {it.direct.confidence ? (
+                        <span className="ml-2 font-mono text-[9px] uppercase tracking-[0.2em] text-ink-muted">
+                          ai · {it.direct.confidence}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="font-mono text-[11px]">
+                      {a} {it.direct.unit || "serving"}
+                    </span>
+                  </li>
+                );
+              }
               const f = FOODS[it.food];
               return (
                 <li key={i} className="flex justify-between font-body">
@@ -628,6 +669,12 @@ function MealSlot({
             <span style={{ color: "#c44827" }}>{totals.kcal} kcal</span>
             <span>{totals.protein}g protein</span>
           </div>
+          {totals.hasDirect && (totals.fat || totals.carbs) ? (
+            <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mt-1">
+              <span>{totals.fat}g fat</span>
+              <span>{totals.carbs}g carbs</span>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div>
@@ -887,6 +934,7 @@ export default function DietManager() {
   const [tab, setTab] = useState("today");
   const [date] = useState(todayKey());
   const [profile, setProfile] = useState(SAIDUR_PROFILE);
+  const [apiKey, setApiKey] = useState("");
   const [trainingDay, setTrainingDay] = useState(null);
   const [steps, setSteps] = useState(null);
   const [meals, setMeals] = useState({ lunch: null, shake: null, dinner: null });
@@ -906,6 +954,9 @@ export default function DietManager() {
         ? profileStored
         : SAIDUR_PROFILE;
       setProfile(activeProfile);
+
+      const storedKey = await loadKey("apiKey:anthropic", "");
+      if (typeof storedKey === "string") setApiKey(storedKey);
 
       const coffeeLen = (activeProfile.coffeeSchedule || []).length;
       const todayMeals = await loadKey(`meals:${date}`, { meals: { lunch: null, shake: null, dinner: null } });
@@ -942,6 +993,9 @@ export default function DietManager() {
   useEffect(() => {
     if (!loading) saveKey("profile:current", profile);
   }, [profile, loading]);
+  useEffect(() => {
+    if (!loading) saveKey("apiKey:anthropic", apiKey);
+  }, [apiKey, loading]);
   useEffect(() => {
     if (!loading) saveKey(`meals:${date}`, { meals });
   }, [meals, date, loading]);
@@ -1184,10 +1238,12 @@ export default function DietManager() {
             profile={profile}
             setProfile={setProfile}
             applyProfile={applyProfile}
+            apiKey={apiKey}
+            setApiKey={setApiKey}
           />
         )}
 
-        {tab === "build" && <BuildTab onLogMeal={logMeal} />}
+        {tab === "build" && <BuildTab onLogMeal={logMeal} apiKey={apiKey} />}
 
         <footer className="mt-10 pt-6 border-t-2 border-ink">
           <p className="font-display italic text-center text-lg md:text-xl text-ink-muted">
@@ -1814,9 +1870,10 @@ function WeekPlannerModal({ plannedWeek, setPlannedWeek, onClose, profile }) {
    TAB: BUILD
 ============================================================ */
 
-function BuildTab({ onLogMeal }) {
+function BuildTab({ onLogMeal, apiKey }) {
   const [items, setItems] = useState([]);
   const [name, setName] = useState("Custom meal");
+  const [photoOpen, setPhotoOpen] = useState(false);
   const totals = useMemo(() => calcMeal(items), [items]);
 
   function addItem(item) {
@@ -1839,6 +1896,32 @@ function BuildTab({ onLogMeal }) {
     setName("Custom meal");
   }
 
+  function logFromAi(slot, ai, quantity) {
+    const meal = {
+      key: "ai_photo",
+      name: ai.name || "Photo meal",
+      icon: "📷",
+      note: ai.notes || null,
+      items: [
+        {
+          food: "ai_photo",
+          amount: 1,
+          direct: {
+            kcal: ai.kcal,
+            protein: ai.protein_g,
+            fat: ai.fat_g,
+            carbs: ai.carbs_g,
+            displayName: `${ai.name}${quantity ? ` · ${quantity}` : ""}`,
+            unit: "serving",
+            confidence: ai.confidence,
+          },
+        },
+      ],
+      isCheat: false,
+    };
+    onLogMeal(slot, meal);
+  }
+
   return (
     <div className="space-y-5">
       <div className="border-b-2 border-ink pb-2">
@@ -1846,6 +1929,29 @@ function BuildTab({ onLogMeal }) {
           Compose your own
         </div>
         <h2 className="font-display text-3xl md:text-4xl font-black tracking-tight">Build a meal</h2>
+      </div>
+
+      <div className="border-2 border-accent p-4 bg-accent/5">
+        <div className="flex items-center gap-3 mb-2">
+          <Camera size={20} className="text-accent" />
+          <div className="flex-1">
+            <div className="font-display text-xl font-bold leading-tight">Photo meal (AI)</div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
+              Snap a plate, state the quantity, get macros
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => setPhotoOpen(true)}
+          className="w-full py-2 bg-accent text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink flex items-center justify-center gap-2"
+        >
+          <Sparkles size={12} /> Analyze a food photo
+        </button>
+        {!apiKey ? (
+          <p className="font-body italic text-xs text-ink-muted mt-2">
+            Set your Anthropic API key in the Profile tab first.
+          </p>
+        ) : null}
       </div>
 
       <div className="border-2 border-ink p-4">
@@ -1902,6 +2008,227 @@ function BuildTab({ onLogMeal }) {
           </button>
         ))}
       </div>
+
+      {photoOpen && (
+        <PhotoMealModal
+          apiKey={apiKey}
+          onClose={() => setPhotoOpen(false)}
+          onLog={(slot, ai, qty) => {
+            logFromAi(slot, ai, qty);
+            setPhotoOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   PhotoMealModal — upload, analyze, edit, save
+============================================================ */
+
+function PhotoMealModal({ apiKey, onClose, onLog }) {
+  const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [quantity, setQuantity] = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null);
+
+  async function pickFile(f) {
+    if (!f) return;
+    setFile(f);
+    setError(null);
+    try {
+      const { dataUrl } = await fileToResizedBase64(f, 1568);
+      setPreviewUrl(dataUrl);
+    } catch (e) {
+      setError(e.message || "Could not read file.");
+    }
+  }
+
+  async function analyze() {
+    if (!file) {
+      setError("Pick a photo first.");
+      return;
+    }
+    if (!apiKey) {
+      setError("Set your Anthropic API key in the Profile tab.");
+      return;
+    }
+    setAnalyzing(true);
+    setError(null);
+    try {
+      const { base64, mediaType } = await fileToResizedBase64(file, 1568);
+      const ai = await analyzeFoodPhoto({ apiKey, base64, mediaType, quantity });
+      setResult(ai);
+    } catch (e) {
+      setError(e.message || "Analysis failed.");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  function updateField(key, value) {
+    setResult((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const confColor = result
+    ? { low: "#c44827", medium: "#6b5a3e", high: "#4a6b3e" }[result.confidence] || "#6b5a3e"
+    : "#6b5a3e";
+
+  return (
+    <div className="fixed inset-0 bg-ink/60 z-50 flex items-end md:items-center justify-center p-2 md:p-6">
+      <div className="bg-paper border-2 border-ink w-full max-w-xl max-h-[95vh] overflow-y-auto">
+        <div className="sticky top-0 bg-paper border-b-2 border-ink px-4 py-3 flex items-center justify-between">
+          <h3 className="font-display text-2xl font-black tracking-tight flex items-center gap-2">
+            <Camera size={18} /> Photo meal
+          </h3>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
+              Photo
+            </div>
+            <label className="block border-2 border-dashed border-ink/40 hover:border-ink p-4 text-center cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => pickFile(e.target.files?.[0])}
+                className="hidden"
+              />
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="Selected food"
+                  className="max-h-64 mx-auto"
+                />
+              ) : (
+                <span className="font-display italic text-ink-muted">
+                  Tap to choose / take photo
+                </span>
+              )}
+            </label>
+          </div>
+
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
+              Quantity (optional but improves accuracy)
+            </div>
+            <input
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              placeholder="e.g. 1 plate, 300g, 2 cups, 1 large piece"
+              className="w-full border border-ink bg-paper px-2 py-2 font-body text-base focus:outline-none"
+            />
+          </div>
+
+          {error ? (
+            <div className="border border-accent bg-accent/5 p-2 font-mono text-[11px] text-accent">
+              {error}
+            </div>
+          ) : null}
+
+          <button
+            onClick={analyze}
+            disabled={!file || analyzing}
+            className="w-full py-3 bg-accent text-paper font-mono text-[11px] uppercase tracking-[0.25em] hover:bg-ink disabled:opacity-30 flex items-center justify-center gap-2"
+          >
+            {analyzing ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Analyzing…
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} /> Analyze with Claude
+              </>
+            )}
+          </button>
+
+          {result ? (
+            <div className="border-2 border-ink p-3 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+                  Estimated macros
+                </span>
+                <span
+                  className="font-mono text-[10px] uppercase tracking-[0.25em]"
+                  style={{ color: confColor }}
+                >
+                  confidence: {result.confidence}
+                </span>
+              </div>
+              <Field label="Name">
+                <input
+                  value={result.name}
+                  onChange={(e) => updateField("name", e.target.value)}
+                  className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="kcal">
+                  <input
+                    type="number"
+                    value={result.kcal}
+                    onChange={(e) => updateField("kcal", Number(e.target.value) || 0)}
+                    className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+                  />
+                </Field>
+                <Field label="protein (g)">
+                  <input
+                    type="number"
+                    value={result.protein_g}
+                    onChange={(e) => updateField("protein_g", Number(e.target.value) || 0)}
+                    className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+                  />
+                </Field>
+                <Field label="fat (g)">
+                  <input
+                    type="number"
+                    value={result.fat_g}
+                    onChange={(e) => updateField("fat_g", Number(e.target.value) || 0)}
+                    className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+                  />
+                </Field>
+                <Field label="carbs (g)">
+                  <input
+                    type="number"
+                    value={result.carbs_g}
+                    onChange={(e) => updateField("carbs_g", Number(e.target.value) || 0)}
+                    className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+                  />
+                </Field>
+              </div>
+              {result.notes ? (
+                <div className="font-body italic text-sm text-ink-muted">{result.notes}</div>
+              ) : null}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: "lunch", label: "Log lunch" },
+                  { id: "shake", label: "Log shake" },
+                  { id: "dinner", label: "Log dinner" },
+                ].map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => onLog(b.id, result, quantity)}
+                    className="py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent"
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1910,9 +2237,11 @@ function BuildTab({ onLogMeal }) {
    TAB: PROFILE (settings)
 ============================================================ */
 
-function ProfileTab({ profile, setProfile, applyProfile }) {
+function ProfileTab({ profile, setProfile, applyProfile, apiKey, setApiKey }) {
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState(null);
+  const [keyDraft, setKeyDraft] = useState(apiKey || "");
+  const [keyVisible, setKeyVisible] = useState(false);
 
   function update(path, value) {
     setProfile((prev) => {
@@ -2173,6 +2502,65 @@ function ProfileTab({ profile, setProfile, applyProfile }) {
           Adding/removing day types or editing presets, grocery, and cheat meals is JSON-only for
           now — see the import/export panel below.
         </p>
+      </Section>
+
+      {/* AI photo analysis */}
+      <Section title="AI photo analysis (optional)">
+        <p className="font-body text-sm text-ink-muted">
+          Used by the photo-meal feature on the Build tab. Your Anthropic API key is stored only
+          in this browser's localStorage and is sent direct to api.anthropic.com when you analyze
+          a photo. Don't enable this on a shared device.{" "}
+          <a
+            href="https://console.anthropic.com/settings/keys"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-accent"
+          >
+            Get a key →
+          </a>
+        </p>
+        <Field label="Anthropic API key">
+          <div className="flex gap-2">
+            <input
+              type={keyVisible ? "text" : "password"}
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              placeholder="sk-ant-…"
+              className="flex-1 border border-ink bg-paper px-2 py-1 font-mono text-xs focus:outline-none"
+            />
+            <button
+              onClick={() => setKeyVisible((v) => !v)}
+              className="px-3 py-1 border border-ink font-mono text-[10px] uppercase tracking-[0.2em] hover:bg-ink hover:text-paper"
+            >
+              {keyVisible ? "Hide" : "Show"}
+            </button>
+          </div>
+        </Field>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setApiKey(keyDraft.trim())}
+            disabled={keyDraft.trim() === (apiKey || "")}
+            className="px-3 py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent disabled:opacity-30"
+          >
+            Save key
+          </button>
+          {apiKey ? (
+            <button
+              onClick={() => {
+                if (confirm("Remove the saved API key from this browser?")) {
+                  setApiKey("");
+                  setKeyDraft("");
+                }
+              }}
+              className="px-3 py-2 border border-accent text-accent font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent hover:text-paper"
+            >
+              Remove
+            </button>
+          ) : null}
+          <span className="font-mono text-[10px] uppercase tracking-[0.25em] self-center text-ink-muted">
+            {apiKey ? `Saved · …${apiKey.slice(-6)}` : "Not set"}
+          </span>
+        </div>
       </Section>
 
       {/* Advanced */}
