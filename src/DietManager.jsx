@@ -19,6 +19,8 @@ import {
   Camera,
   Sparkles,
   Loader2,
+  Pencil,
+  PlusCircle,
 } from "lucide-react";
 
 import { FOODS, GROCERY_CATEGORIES, TEMPLATES, SAIDUR_PROFILE, cloneTemplate } from "./profiles.js";
@@ -900,7 +902,7 @@ function CheatMealCard({ preset, onLog }) {
   );
 }
 
-function GroceryRow({ item, onAdjust, onRestock }) {
+function GroceryRow({ item, onAdjust, onRestock, onEdit, onDelete }) {
   const low = item.currentQty <= item.lowThreshold;
   const out = item.currentQty <= 0;
   const max = Math.max(item.initialQty, item.currentQty, item.packetSize);
@@ -930,28 +932,49 @@ function GroceryRow({ item, onAdjust, onRestock }) {
             {Math.round(item.currentQty)} {item.unit} · low at {item.lowThreshold} · packet {item.packetSize}
           </div>
         </div>
-        <div className="flex items-center gap-1">
+      </div>
+      <div className="flex items-center gap-1 mt-2 flex-wrap">
+        <button
+          onClick={() => onAdjust(item.key, -item.packetSize)}
+          className="w-7 h-7 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
+          title={`-${item.packetSize}`}
+        >
+          <Minus size={12} />
+        </button>
+        <button
+          onClick={() => onAdjust(item.key, item.packetSize)}
+          className="w-7 h-7 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
+          title={`+${item.packetSize}`}
+        >
+          <Plus size={12} />
+        </button>
+        <button
+          onClick={() => onRestock(item.key)}
+          className="px-2 py-1 border border-ink font-mono text-[9px] uppercase tracking-[0.2em] hover:bg-ink hover:text-paper"
+        >
+          Restock
+        </button>
+        <span className="flex-1" />
+        {onEdit ? (
           <button
-            onClick={() => onAdjust(item.key, -item.packetSize)}
-            className="w-7 h-7 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
-            title={`-${item.packetSize}`}
+            onClick={() => onEdit(item)}
+            className="w-7 h-7 border border-ink/40 flex items-center justify-center hover:bg-ink hover:text-paper"
+            title="Edit"
+            aria-label="Edit"
           >
-            <Minus size={12} />
+            <Pencil size={12} />
           </button>
+        ) : null}
+        {onDelete ? (
           <button
-            onClick={() => onAdjust(item.key, item.packetSize)}
-            className="w-7 h-7 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
-            title={`+${item.packetSize}`}
+            onClick={() => onDelete(item)}
+            className="w-7 h-7 border border-ink/40 flex items-center justify-center hover:bg-accent hover:text-paper hover:border-accent"
+            title="Delete"
+            aria-label="Delete"
           >
-            <Plus size={12} />
+            <Trash2 size={12} />
           </button>
-          <button
-            onClick={() => onRestock(item.key)}
-            className="ml-1 px-2 py-1 border border-ink font-mono text-[9px] uppercase tracking-[0.2em] hover:bg-ink hover:text-paper"
-          >
-            Restock
-          </button>
-        </div>
+        ) : null}
       </div>
       <div className="mt-2 h-px bg-ink/20 relative">
         <div
@@ -1026,6 +1049,7 @@ export default function DietManager() {
   const [grocery, setGrocery] = useState(() => freshGrocery(SAIDUR_PROFILE.groceryTemplate));
   const [weekDays, setWeekDays] = useState([]);
   const [plannedWeek, setPlannedWeek] = useState({});
+  const [manualShopping, setManualShopping] = useState([]);
   const [loading, setLoading] = useState(true);
 
   /* ----- Initial load ----- */
@@ -1047,6 +1071,7 @@ export default function DietManager() {
       const todaySteps = await loadKey(`steps:${date}`, null);
       const groceryStored = await loadKey("grocery:current", null);
       const planStored = await loadKey("plan:current_week", null);
+      const manualStored = await loadKey("shopping:manual", []);
 
       if (todayMeals?.meals) setMeals(todayMeals.meals);
       if (Array.isArray(todayCoffee) && todayCoffee.length === coffeeLen) {
@@ -1062,6 +1087,7 @@ export default function DietManager() {
           : freshGrocery(activeProfile.groceryTemplate),
       );
       if (planStored) setPlannedWeek(planStored);
+      if (Array.isArray(manualStored)) setManualShopping(manualStored);
 
       // Load last 7 days for week tab
       await reloadWeek(activeProfile);
@@ -1096,6 +1122,9 @@ export default function DietManager() {
   useEffect(() => {
     if (!loading) saveKey("plan:current_week", plannedWeek);
   }, [plannedWeek, loading]);
+  useEffect(() => {
+    if (!loading) saveKey("shopping:manual", manualShopping);
+  }, [manualShopping, loading]);
 
   /* ----- Cheat day surplus persistence ----- */
   useEffect(() => {
@@ -1225,9 +1254,73 @@ export default function DietManager() {
     if (!confirm("Reset all inventory to template values?")) return;
     setGrocery(freshGrocery(profile.groceryTemplate));
   }
+  function addGroceryItem(input) {
+    // input: { name, category, unit, initialQty, packetSize, lowThreshold, icon }
+    const baseSlug = slugify(input.name) || "item";
+    setProfile((prev) => {
+      const existingTpl = prev.groceryTemplate || [];
+      let key = baseSlug;
+      let i = 1;
+      while (existingTpl.some((g) => g.key === key)) key = `${baseSlug}_${i++}`;
+      const item = {
+        key,
+        name: input.name,
+        category: input.category || "Pantry",
+        unit: input.unit || "g",
+        initialQty: Number(input.initialQty) || 0,
+        packetSize: Number(input.packetSize) || 1,
+        lowThreshold: Number(input.lowThreshold) || 0,
+        icon: input.icon || "📦",
+      };
+      // Append to live grocery as well.
+      setGrocery((prevG) => [...prevG, { ...item, currentQty: item.initialQty }]);
+      return { ...prev, groceryTemplate: [...existingTpl, item] };
+    });
+  }
+  function updateGroceryItem(key, updates) {
+    const cleaned = { ...updates };
+    ["initialQty", "packetSize", "lowThreshold"].forEach((k) => {
+      if (cleaned[k] !== undefined) cleaned[k] = Number(cleaned[k]) || 0;
+    });
+    setProfile((prev) => ({
+      ...prev,
+      groceryTemplate: (prev.groceryTemplate || []).map((g) =>
+        g.key === key ? { ...g, ...cleaned } : g,
+      ),
+    }));
+    setGrocery((prev) => prev.map((g) => (g.key === key ? { ...g, ...cleaned } : g)));
+  }
+  function deleteGroceryItem(key) {
+    setProfile((prev) => ({
+      ...prev,
+      groceryTemplate: (prev.groceryTemplate || []).filter((g) => g.key !== key),
+    }));
+    setGrocery((prev) => prev.filter((g) => g.key !== key));
+  }
   function clearShoppingPlan() {
     if (!confirm("Clear the planned week / shopping list?")) return;
     setPlannedWeek({});
+  }
+  function addManualShopping(input) {
+    const id = `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
+    setManualShopping((prev) => [
+      ...prev,
+      {
+        id,
+        name: input.name,
+        qty: Number(input.qty) || 0,
+        unit: input.unit || "",
+        note: input.note || "",
+      },
+    ]);
+  }
+  function updateManualShopping(id, updates) {
+    setManualShopping((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item)),
+    );
+  }
+  function deleteManualShopping(id) {
+    setManualShopping((prev) => prev.filter((item) => item.id !== id));
   }
 
   /* ----- Reset today ----- */
@@ -1346,6 +1439,13 @@ export default function DietManager() {
             setPlannedWeek={setPlannedWeek}
             onClearPlan={clearShoppingPlan}
             profile={profile}
+            onAddItem={addGroceryItem}
+            onUpdateItem={updateGroceryItem}
+            onDeleteItem={deleteGroceryItem}
+            manualShopping={manualShopping}
+            onAddManual={addManualShopping}
+            onUpdateManual={updateManualShopping}
+            onDeleteManual={deleteManualShopping}
           />
         )}
 
@@ -1695,19 +1795,83 @@ function GroceryTab({
   setPlannedWeek,
   onClearPlan,
   profile,
+  onAddItem,
+  onUpdateItem,
+  onDeleteItem,
+  manualShopping = [],
+  onAddManual,
+  onUpdateManual,
+  onDeleteManual,
 }) {
   const [view, setView] = useState("inventory"); // inventory | shopping | reset
   const [plannerOpen, setPlannerOpen] = useState(false);
+  const [itemModal, setItemModal] = useState(null); // { mode: 'add'|'edit', item? }
+  const [manualForm, setManualForm] = useState({ name: "", qty: "", unit: "", note: "" });
+  const [editingManualId, setEditingManualId] = useState(null);
+
+  const orderedCategories = useMemo(() => {
+    const fromItems = Array.from(new Set(grocery.map((g) => g.category)));
+    const merged = [...GROCERY_CATEGORIES];
+    for (const c of fromItems) if (!merged.includes(c)) merged.push(c);
+    return merged;
+  }, [grocery]);
 
   const groupedByCategory = useMemo(() => {
     const out = {};
-    for (const cat of GROCERY_CATEGORIES) out[cat] = [];
+    for (const cat of orderedCategories) out[cat] = [];
     for (const g of grocery) {
       if (!out[g.category]) out[g.category] = [];
       out[g.category].push(g);
     }
     return out;
-  }, [grocery]);
+  }, [grocery, orderedCategories]);
+
+  function handleEdit(item) {
+    setItemModal({ mode: "edit", item });
+  }
+  function handleDelete(item) {
+    if (confirm(`Delete "${item.name}" from your inventory? This also removes it from the template.`)) {
+      onDeleteItem(item.key);
+    }
+  }
+  function handleSaveItem(input) {
+    if (itemModal?.mode === "edit") {
+      onUpdateItem(itemModal.item.key, input);
+    } else {
+      onAddItem(input);
+    }
+    setItemModal(null);
+  }
+
+  function submitManual(e) {
+    e?.preventDefault();
+    if (!manualForm.name.trim()) return;
+    if (editingManualId) {
+      onUpdateManual(editingManualId, {
+        name: manualForm.name,
+        qty: Number(manualForm.qty) || 0,
+        unit: manualForm.unit,
+        note: manualForm.note,
+      });
+      setEditingManualId(null);
+    } else {
+      onAddManual(manualForm);
+    }
+    setManualForm({ name: "", qty: "", unit: "", note: "" });
+  }
+  function startEditManual(item) {
+    setEditingManualId(item.id);
+    setManualForm({
+      name: item.name || "",
+      qty: item.qty != null ? String(item.qty) : "",
+      unit: item.unit || "",
+      note: item.note || "",
+    });
+  }
+  function cancelEditManual() {
+    setEditingManualId(null);
+    setManualForm({ name: "", qty: "", unit: "", note: "" });
+  }
 
   const shoppingList = useMemo(
     () => generateShoppingList(plannedWeek, grocery),
@@ -1747,7 +1911,18 @@ function GroceryTab({
 
       {view === "inventory" && (
         <div className="space-y-5">
-          {GROCERY_CATEGORIES.map((cat) => {
+          <button
+            onClick={() => setItemModal({ mode: "add" })}
+            className="w-full py-2 border-2 border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper flex items-center justify-center gap-2"
+          >
+            <PlusCircle size={14} /> Add inventory item
+          </button>
+          {grocery.length === 0 ? (
+            <div className="border border-ink/30 p-6 text-center font-display italic text-ink-muted">
+              No inventory items yet. Tap "Add inventory item" to start.
+            </div>
+          ) : null}
+          {orderedCategories.map((cat) => {
             const items = groupedByCategory[cat] || [];
             if (!items.length) return null;
             return (
@@ -1755,7 +1930,14 @@ function GroceryTab({
                 <h3 className="font-display text-2xl font-black tracking-tight mb-2">{cat}</h3>
                 <div className="space-y-2">
                   {items.map((it) => (
-                    <GroceryRow key={it.key} item={it} onAdjust={onAdjust} onRestock={onRestock} />
+                    <GroceryRow
+                      key={it.key}
+                      item={it}
+                      onAdjust={onAdjust}
+                      onRestock={onRestock}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
                   ))}
                 </div>
               </section>
@@ -1795,37 +1977,140 @@ function GroceryTab({
             </div>
           </div>
 
-          {shoppingList.length === 0 ? (
-            <div className="border border-ink/30 p-6 text-center">
-              <div className="font-display italic text-ink-muted">
-                {Object.keys(plannedWeek).length
-                  ? "All planned ingredients are in stock. ✨"
-                  : "No plan yet. Tap 'Plan this week' to assign meals to days."}
-              </div>
+          {/* Auto-generated section */}
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
+              Auto from week plan
             </div>
-          ) : (
-            <div className="space-y-2">
-              {shoppingList.map((s) => (
-                <div key={s.key} className="border border-ink p-3 flex items-center gap-3">
-                  <span className="text-2xl select-none">{s.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-display text-base font-bold leading-tight">
-                      {s.name}
-                    </div>
-                    <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
-                      have {s.haveCurrently} · need {s.needed} · buy {s.packets}× {s.packetSize} {s.unit}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => markPurchased(s.key, s.toBuy)}
-                    className="px-2 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.2em] hover:bg-ink hover:text-paper flex items-center gap-1"
-                  >
-                    <Check size={11} /> Bought
-                  </button>
+            {shoppingList.length === 0 ? (
+              <div className="border border-ink/30 p-6 text-center">
+                <div className="font-display italic text-ink-muted">
+                  {Object.keys(plannedWeek).length
+                    ? "All planned ingredients are in stock. ✨"
+                    : "No plan yet. Tap 'Plan this week' to assign meals to days."}
                 </div>
-              ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {shoppingList.map((s) => (
+                  <div key={s.key} className="border border-ink p-3 flex items-center gap-3">
+                    <span className="text-2xl select-none">{s.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-display text-base font-bold leading-tight">
+                        {s.name}
+                      </div>
+                      <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+                        have {s.haveCurrently} · need {s.needed} · buy {s.packets}× {s.packetSize} {s.unit}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => markPurchased(s.key, s.toBuy)}
+                      className="px-2 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.2em] hover:bg-ink hover:text-paper flex items-center gap-1"
+                    >
+                      <Check size={11} /> Bought
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Manual additions */}
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
+              Manual additions
             </div>
-          )}
+
+            <form
+              onSubmit={submitManual}
+              className="border border-ink p-3 space-y-2 mb-3"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                <input
+                  value={manualForm.name}
+                  onChange={(e) => setManualForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Item name (e.g. dish soap)"
+                  className="md:col-span-5 border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+                />
+                <input
+                  type="number"
+                  value={manualForm.qty}
+                  onChange={(e) => setManualForm((f) => ({ ...f, qty: e.target.value }))}
+                  placeholder="qty"
+                  className="md:col-span-2 border border-ink bg-paper px-2 py-1 font-display text-base focus:outline-none"
+                />
+                <input
+                  value={manualForm.unit}
+                  onChange={(e) => setManualForm((f) => ({ ...f, unit: e.target.value }))}
+                  placeholder="unit"
+                  className="md:col-span-2 border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+                />
+                <input
+                  value={manualForm.note}
+                  onChange={(e) => setManualForm((f) => ({ ...f, note: e.target.value }))}
+                  placeholder="note"
+                  className="md:col-span-3 border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={!manualForm.name.trim()}
+                  className="px-3 py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent disabled:opacity-30"
+                >
+                  {editingManualId ? "Save" : "+ Add to list"}
+                </button>
+                {editingManualId ? (
+                  <button
+                    type="button"
+                    onClick={cancelEditManual}
+                    className="px-3 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper"
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+
+            {manualShopping.length === 0 ? (
+              <div className="border border-ink/30 p-4 text-center font-display italic text-ink-muted">
+                No manual items yet.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {manualShopping.map((m) => (
+                  <li
+                    key={m.id}
+                    className="border border-ink p-3 flex items-center gap-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-display text-base font-bold leading-tight">
+                        {m.name}
+                      </div>
+                      <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+                        {m.qty || "—"} {m.unit}
+                        {m.note ? ` · ${m.note}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => startEditManual(m)}
+                      className="w-7 h-7 border border-ink/40 flex items-center justify-center hover:bg-ink hover:text-paper"
+                      aria-label="Edit"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      onClick={() => onDeleteManual(m.id)}
+                      className="w-7 h-7 border border-ink/40 flex items-center justify-center hover:bg-accent hover:text-paper hover:border-accent"
+                      aria-label="Delete"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
 
@@ -1866,6 +2151,171 @@ function GroceryTab({
           profile={profile}
         />
       )}
+
+      {itemModal && (
+        <InventoryItemModal
+          mode={itemModal.mode}
+          item={itemModal.item}
+          existingCategories={orderedCategories}
+          onClose={() => setItemModal(null)}
+          onSave={handleSaveItem}
+        />
+      )}
+    </div>
+  );
+}
+
+function InventoryItemModal({ mode, item, existingCategories = [], onClose, onSave }) {
+  const isEdit = mode === "edit";
+  const [draft, setDraft] = useState(() => ({
+    icon: item?.icon || "📦",
+    name: item?.name || "",
+    category: item?.category || existingCategories[0] || "Pantry",
+    unit: item?.unit || "g",
+    initialQty: item?.initialQty != null ? String(item.initialQty) : "0",
+    packetSize: item?.packetSize != null ? String(item.packetSize) : "1",
+    lowThreshold: item?.lowThreshold != null ? String(item.lowThreshold) : "0",
+  }));
+  const [customCategory, setCustomCategory] = useState(false);
+
+  function set(k, v) {
+    setDraft((prev) => ({ ...prev, [k]: v }));
+  }
+  function submit(e) {
+    e?.preventDefault();
+    if (!draft.name.trim()) return;
+    onSave({
+      icon: draft.icon || "📦",
+      name: draft.name.trim(),
+      category: draft.category.trim() || "Pantry",
+      unit: draft.unit.trim() || "g",
+      initialQty: Number(draft.initialQty) || 0,
+      packetSize: Number(draft.packetSize) || 1,
+      lowThreshold: Number(draft.lowThreshold) || 0,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-ink/60 z-50 flex items-end md:items-center justify-center p-2 md:p-6">
+      <form
+        onSubmit={submit}
+        className="bg-paper border-2 border-ink w-full max-w-lg max-h-[95vh] overflow-y-auto"
+      >
+        <div className="sticky top-0 bg-paper border-b-2 border-ink px-4 py-3 flex items-center justify-between">
+          <h3 className="font-display text-2xl font-black tracking-tight">
+            {isEdit ? "Edit item" : "Add item"}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <input
+              value={draft.icon}
+              onChange={(e) => set("icon", e.target.value)}
+              maxLength={4}
+              className="w-12 text-center text-2xl bg-paper border border-ink py-1 focus:outline-none"
+              aria-label="Icon"
+            />
+            <input
+              value={draft.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="Item name"
+              autoFocus
+              className="flex-1 font-display text-2xl font-bold bg-paper border-b border-ink py-1 focus:outline-none"
+            />
+          </div>
+
+          <Field label="Category">
+            {customCategory ? (
+              <input
+                value={draft.category}
+                onChange={(e) => set("category", e.target.value)}
+                placeholder="Custom category"
+                className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+              />
+            ) : (
+              <select
+                value={draft.category}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "__custom__") {
+                    setCustomCategory(true);
+                  } else {
+                    set("category", v);
+                  }
+                }}
+                className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+              >
+                {existingCategories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                <option value="__custom__">+ Custom category…</option>
+              </select>
+            )}
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Unit">
+              <input
+                value={draft.unit}
+                onChange={(e) => set("unit", e.target.value)}
+                placeholder="g / ml / pc / cup"
+                className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+              />
+            </Field>
+            <Field label={isEdit ? "Reset qty (template)" : "Initial qty"}>
+              <input
+                type="number"
+                value={draft.initialQty}
+                onChange={(e) => set("initialQty", e.target.value)}
+                className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+              />
+            </Field>
+            <Field label="Packet size">
+              <input
+                type="number"
+                value={draft.packetSize}
+                onChange={(e) => set("packetSize", e.target.value)}
+                className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+              />
+            </Field>
+            <Field label="Low threshold">
+              <input
+                type="number"
+                value={draft.lowThreshold}
+                onChange={(e) => set("lowThreshold", e.target.value)}
+                className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-paper border-t-2 border-ink p-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!draft.name.trim()}
+            className="px-4 py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent disabled:opacity-30"
+          >
+            {isEdit ? "Save changes" : "Add item"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
