@@ -758,10 +758,51 @@ function LowStockBanner({ items, onView }) {
   );
 }
 
+function stepFor(unit) {
+  switch (unit) {
+    case "g":
+    case "ml":
+      return 25;
+    case "pc":
+    case "slice":
+      return 1;
+    case "tbsp":
+    case "tsp":
+    case "cup":
+      return 0.5;
+    default:
+      return 1;
+  }
+}
+
 function CheatMealCard({ preset, onLog }) {
   const [version, setVersion] = useState("original");
+  const [customByVersion, setCustomByVersion] = useState({});
   const v = preset.versions[version];
-  const totals = calcMeal(v.items);
+
+  const customAmounts = customByVersion[version] || {};
+  const items = v.items.map((it, i) => ({
+    ...it,
+    amount: customAmounts[i] != null ? customAmounts[i] : it.amount,
+  }));
+  const isCustomized = Object.keys(customAmounts).length > 0;
+  const totals = calcMeal(items);
+
+  function setAmount(idx, value) {
+    const n = value === "" ? 0 : Math.max(0, Number(value) || 0);
+    setCustomByVersion((prev) => ({
+      ...prev,
+      [version]: { ...(prev[version] || {}), [idx]: n },
+    }));
+  }
+  function adjust(idx, delta) {
+    const cur = items[idx].amount;
+    setAmount(idx, cur + delta);
+  }
+  function resetVersion() {
+    setCustomByVersion((prev) => ({ ...prev, [version]: {} }));
+  }
+
   return (
     <div className="border-2 border-ink p-4">
       <div className="flex items-center gap-3 mb-3">
@@ -796,19 +837,53 @@ function CheatMealCard({ preset, onLog }) {
         <div className="font-body italic text-sm text-ink-muted mb-2">{v.note}</div>
       ) : null}
 
-      <ul className="text-sm space-y-1 mb-3">
-        {v.items.map((it, i) => {
+      <ul className="text-sm space-y-2 mb-3">
+        {items.map((it, i) => {
           const f = FOODS[it.food];
+          const step = stepFor(f?.unit);
           return (
-            <li key={i} className="flex justify-between font-body">
-              <span>{f?.display || it.food}</span>
-              <span className="font-mono text-[11px]">
-                {it.amount} {f?.unit}
+            <li key={i} className="flex items-center gap-2 font-body">
+              <span className="flex-1 min-w-0 truncate">{f?.display || it.food}</span>
+              <button
+                type="button"
+                onClick={() => adjust(i, -step)}
+                className="w-6 h-6 border border-ink/40 flex items-center justify-center hover:bg-ink hover:text-paper"
+                aria-label="Decrease"
+              >
+                <Minus size={11} />
+              </button>
+              <input
+                type="number"
+                value={it.amount}
+                min={0}
+                step={step}
+                onChange={(e) => setAmount(i, e.target.value)}
+                className="w-16 border border-ink/40 bg-paper px-1 py-0.5 font-mono text-[11px] text-right focus:outline-none focus:border-ink"
+              />
+              <button
+                type="button"
+                onClick={() => adjust(i, step)}
+                className="w-6 h-6 border border-ink/40 flex items-center justify-center hover:bg-ink hover:text-paper"
+                aria-label="Increase"
+              >
+                <Plus size={11} />
+              </button>
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted w-9">
+                {f?.unit}
               </span>
             </li>
           );
         })}
       </ul>
+
+      {isCustomized ? (
+        <button
+          onClick={resetVersion}
+          className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted hover:text-accent flex items-center gap-1 mb-2"
+        >
+          <RotateCcw size={11} /> Reset to original portions
+        </button>
+      ) : null}
 
       <div className="border-t border-ink/20 pt-2 mb-3 flex justify-between font-mono text-[10px] uppercase tracking-[0.25em]">
         <span style={{ color: "#c44827" }}>{totals.kcal} kcal</span>
@@ -816,10 +891,10 @@ function CheatMealCard({ preset, onLog }) {
       </div>
 
       <button
-        onClick={() => onLog(preset, version)}
+        onClick={() => onLog(preset, version, items)}
         className="w-full py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent"
       >
-        Log as lunch
+        Log as lunch{isCustomized ? " (customized)" : ""}
       </button>
     </div>
   );
@@ -1111,14 +1186,23 @@ export default function DietManager() {
     logMeal(slot, meal);
   }
 
-  function logCheat(preset, version) {
+  function logCheat(preset, version, customItems = null) {
     const v = preset.versions[version];
+    const sourceItems = (customItems && customItems.length ? customItems : v.items).filter(
+      (it) => it.amount > 0,
+    );
+    const customized =
+      customItems &&
+      v.items.some((orig, i) => {
+        const c = customItems[i];
+        return !c || c.amount !== orig.amount;
+      });
     const meal = {
       key: preset.key,
-      name: `${preset.name} (${v.label})`,
+      name: `${preset.name} (${v.label})${customized ? " · custom" : ""}`,
       icon: preset.icon,
       note: v.note,
-      items: v.items.map((i) => ({ ...i })),
+      items: sourceItems.map((i) => ({ ...i })),
       isCheat: true,
       cheatVersion: version,
     };
