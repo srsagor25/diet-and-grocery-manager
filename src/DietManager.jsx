@@ -908,10 +908,11 @@ function stepFor(unit) {
   }
 }
 
-function CheatMealCard({ preset, onLog }) {
-  const [version, setVersion] = useState("original");
+function CheatMealCard({ preset, onLog, onEdit, onDelete }) {
+  const versionKeys = Object.keys(preset.versions || {});
+  const [version, setVersion] = useState(versionKeys[0] || "default");
   const [customByVersion, setCustomByVersion] = useState({});
-  const v = preset.versions[version];
+  const v = preset.versions[version] || preset.versions[versionKeys[0]] || { items: [] };
 
   const customAmounts = customByVersion[version] || {};
   const items = v.items.map((it, i) => ({
@@ -938,9 +939,9 @@ function CheatMealCard({ preset, onLog }) {
 
   return (
     <div className="border-2 border-ink p-4">
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-start gap-3 mb-3">
         <span className="text-4xl select-none">{preset.icon}</span>
-        <div>
+        <div className="flex-1 min-w-0">
           <h3 className="font-display text-2xl font-black tracking-tight leading-tight">
             {preset.name}
           </h3>
@@ -950,21 +951,47 @@ function CheatMealCard({ preset, onLog }) {
             </div>
           ) : null}
         </div>
+        {(onEdit || onDelete) ? (
+          <div className="flex items-center gap-1">
+            {onEdit ? (
+              <button
+                onClick={() => onEdit(preset, version)}
+                className="w-7 h-7 border border-ink/40 flex items-center justify-center hover:bg-ink hover:text-paper"
+                aria-label="Edit"
+                title="Edit"
+              >
+                <Pencil size={12} />
+              </button>
+            ) : null}
+            {onDelete ? (
+              <button
+                onClick={() => onDelete(preset)}
+                className="w-7 h-7 border border-ink/40 flex items-center justify-center hover:bg-accent hover:text-paper hover:border-accent"
+                aria-label="Delete"
+                title="Delete"
+              >
+                <Trash2 size={12} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex border border-ink mb-3">
-        {Object.entries(preset.versions).map(([k, val]) => (
-          <button
-            key={k}
-            onClick={() => setVersion(k)}
-            className={`flex-1 py-2 font-mono text-[10px] uppercase tracking-[0.2em] ${
-              version === k ? "bg-ink text-paper" : "hover:bg-ink/5"
-            }`}
-          >
-            {val.label}
-          </button>
-        ))}
-      </div>
+      {versionKeys.length > 1 ? (
+        <div className="flex border border-ink mb-3">
+          {Object.entries(preset.versions).map(([k, val]) => (
+            <button
+              key={k}
+              onClick={() => setVersion(k)}
+              className={`flex-1 py-2 font-mono text-[10px] uppercase tracking-[0.2em] ${
+                version === k ? "bg-ink text-paper" : "hover:bg-ink/5"
+              }`}
+            >
+              {val.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {v.note ? (
         <div className="font-body italic text-sm text-ink-muted mb-2">{v.note}</div>
@@ -1552,6 +1579,60 @@ export default function DietManager() {
     });
   }
 
+  function addCheatPreset(input) {
+    // input: { name, icon, note, versionLabel, versionNote, items }
+    const baseSlug = slugify(input.name) || "cheat";
+    setProfile((prev) => {
+      const existing = prev.cheatPresets || {};
+      let key = baseSlug;
+      let i = 1;
+      while (existing[key]) key = `${baseSlug}_${i++}`;
+      const versionLabel = input.versionLabel || "default";
+      return {
+        ...prev,
+        cheatPresets: {
+          ...existing,
+          [key]: {
+            key,
+            name: input.name,
+            icon: input.icon || "🍽️",
+            note: input.note || undefined,
+            versions: {
+              [slugify(versionLabel) || "default"]: {
+                label: versionLabel,
+                note: input.versionNote || undefined,
+                items: (input.items || []).map((it) => ({ ...it })),
+              },
+            },
+          },
+        },
+      };
+    });
+  }
+
+  function updateCheatPreset(key, updates) {
+    // updates may include: name, icon, note, versions (full replacement)
+    setProfile((prev) => {
+      const existing = prev.cheatPresets?.[key];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        cheatPresets: {
+          ...prev.cheatPresets,
+          [key]: { ...existing, ...updates, key },
+        },
+      };
+    });
+  }
+
+  function deleteCheatPreset(key) {
+    setProfile((prev) => {
+      const existing = { ...(prev.cheatPresets || {}) };
+      delete existing[key];
+      return { ...prev, cheatPresets: existing };
+    });
+  }
+
   /* ----- Apply a profile template (Saidur / Blank / imported JSON) ----- */
   function applyProfile(nextProfile, { resetGrocery = true } = {}) {
     const cloned = cloneTemplate(nextProfile);
@@ -1636,6 +1717,9 @@ export default function DietManager() {
             cheatPresets={profile.cheatPresets}
             fastFoodTips={profile.fastFoodTips}
             cheatBaselineKcal={profile.cheatBaselineKcal}
+            onAddCheat={addCheatPreset}
+            onUpdateCheat={updateCheatPreset}
+            onDeleteCheat={deleteCheatPreset}
           />
         )}
 
@@ -1794,7 +1878,7 @@ function TodayTab({
         />
         <MealSlot
           slot="shake"
-          label="Shake"
+          label="Snacks / Shake"
           meal={meals.shake}
           presets={profile.shakePresets}
           suggestedPresetKey={suggestedShakeKey}
@@ -1968,9 +2052,51 @@ function SummaryCell({ label, value, accent }) {
    TAB: CHEAT
 ============================================================ */
 
-function CheatTab({ onLogCheat, weekDays, cheatPresets = {}, fastFoodTips = [] }) {
+function CheatTab({
+  onLogCheat,
+  weekDays,
+  cheatPresets = {},
+  fastFoodTips = [],
+  onAddCheat,
+  onUpdateCheat,
+  onDeleteCheat,
+}) {
   const totals = useMemo(() => calcWeekTotals(weekDays), [weekDays]);
   const cheatList = Object.values(cheatPresets);
+  const [cheatModal, setCheatModal] = useState(null); // { mode:'add'|'edit', preset?, version? }
+
+  function handleEdit(preset, versionKey) {
+    setCheatModal({ mode: "edit", preset, versionKey });
+  }
+  function handleDelete(preset) {
+    if (confirm(`Delete "${preset.name}" from cheat meals?`)) {
+      onDeleteCheat(preset.key);
+    }
+  }
+  function handleSave(input) {
+    if (cheatModal?.mode === "edit") {
+      const original = cheatModal.preset;
+      const versionKey = cheatModal.versionKey || Object.keys(original.versions || {})[0];
+      const nextVersions = {
+        ...(original.versions || {}),
+        [versionKey]: {
+          label: input.versionLabel || original.versions?.[versionKey]?.label || "default",
+          note: input.versionNote || undefined,
+          items: input.items.map((i) => ({ ...i })),
+        },
+      };
+      onUpdateCheat(original.key, {
+        name: input.name,
+        icon: input.icon || "🍽️",
+        note: input.note || undefined,
+        versions: nextVersions,
+      });
+    } else {
+      onAddCheat(input);
+    }
+    setCheatModal(null);
+  }
+
   return (
     <div className="space-y-6">
       <div className="border-b-2 border-ink pb-2">
@@ -1994,20 +2120,47 @@ function CheatTab({ onLogCheat, weekDays, cheatPresets = {}, fastFoodTips = [] }
         <ChefHat size={28} className="text-ink-muted" />
       </div>
 
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="font-display text-2xl font-black tracking-tight">
+          Favorite cheat meals
+        </h3>
+        {onAddCheat ? (
+          <button
+            onClick={() => setCheatModal({ mode: "add" })}
+            className="px-3 py-2 border-2 border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper flex items-center gap-2"
+          >
+            <PlusCircle size={12} /> Add cheat meal
+          </button>
+        ) : null}
+      </div>
+
       {cheatList.length > 0 ? (
-        <div>
-          <h3 className="font-display text-2xl font-black tracking-tight mb-3">Favorite cheat meals</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {cheatList.map((p) => (
-              <CheatMealCard key={p.key} preset={p} onLog={onLogCheat} />
-            ))}
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {cheatList.map((p) => (
+            <CheatMealCard
+              key={p.key}
+              preset={p}
+              onLog={onLogCheat}
+              onEdit={onUpdateCheat ? handleEdit : undefined}
+              onDelete={onDeleteCheat ? handleDelete : undefined}
+            />
+          ))}
         </div>
       ) : (
         <div className="border border-ink/30 p-6 text-center font-body italic text-ink-muted">
-          No cheat presets in this profile.
+          No cheat presets yet. Tap "Add cheat meal" to create one.
         </div>
       )}
+
+      {cheatModal ? (
+        <CheatPresetModal
+          mode={cheatModal.mode}
+          preset={cheatModal.preset}
+          versionKey={cheatModal.versionKey}
+          onClose={() => setCheatModal(null)}
+          onSave={handleSave}
+        />
+      ) : null}
 
       {fastFoodTips.length > 0 ? (
         <div>
@@ -2030,6 +2183,207 @@ function CheatTab({ onLogCheat, weekDays, cheatPresets = {}, fastFoodTips = [] }
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/* ============================================================
+   CheatPresetModal — add or edit a cheat meal (one version at a time)
+============================================================ */
+
+function CheatPresetModal({ mode, preset, versionKey, onClose, onSave }) {
+  const isEdit = mode === "edit";
+  const initialVersionKey =
+    versionKey || (preset?.versions ? Object.keys(preset.versions)[0] : null);
+  const initialVersion = preset?.versions?.[initialVersionKey];
+
+  const [name, setName] = useState(preset?.name || "");
+  const [icon, setIcon] = useState(preset?.icon || "🍽️");
+  const [note, setNote] = useState(preset?.note || "");
+  const [versionLabel, setVersionLabel] = useState(initialVersion?.label || "default");
+  const [versionNote, setVersionNote] = useState(initialVersion?.note || "");
+  const [items, setItems] = useState(() =>
+    (initialVersion?.items || []).map((it) => ({ ...it })),
+  );
+
+  const totals = useMemo(() => calcMeal(items), [items]);
+
+  function setAmount(idx, value) {
+    const n = value === "" ? 0 : Math.max(0, Number(value) || 0);
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, amount: n } : it)));
+  }
+  function adjust(idx, delta) {
+    setItems((prev) =>
+      prev.map((it, i) => (i === idx ? { ...it, amount: Math.max(0, (it.amount || 0) + delta) } : it)),
+    );
+  }
+  function removeItem(idx) {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+  }
+  function addItem(item) {
+    if (!item.amount) return;
+    setItems((prev) => [...prev, item]);
+  }
+
+  function submit(e) {
+    e?.preventDefault();
+    if (!name.trim()) return;
+    if (!items.length) return;
+    onSave({
+      name: name.trim(),
+      icon: icon || "🍽️",
+      note: note.trim() || undefined,
+      versionLabel: versionLabel.trim() || "default",
+      versionNote: versionNote.trim() || undefined,
+      items: items.filter((it) => it.amount > 0),
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-ink/60 z-50 flex items-end md:items-center justify-center p-2 md:p-6">
+      <form
+        onSubmit={submit}
+        className="bg-paper border-2 border-ink w-full max-w-xl max-h-[95vh] overflow-y-auto"
+      >
+        <div className="sticky top-0 bg-paper border-b-2 border-ink px-4 py-3 flex items-center justify-between">
+          <h3 className="font-display text-2xl font-black tracking-tight">
+            {isEdit ? `Edit cheat: ${preset?.name}` : "Add cheat meal"}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <input
+              value={icon}
+              onChange={(e) => setIcon(e.target.value)}
+              maxLength={4}
+              className="w-12 text-center text-2xl bg-paper border border-ink py-1 focus:outline-none"
+              aria-label="Icon"
+            />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Cheat meal name (e.g. Burger night)"
+              autoFocus
+              className="flex-1 font-display text-2xl font-bold bg-paper border-b border-ink py-1 focus:outline-none"
+            />
+          </div>
+
+          <Field label="Note (optional)">
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. order ahead, share with family"
+              className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+            />
+          </Field>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Field label="Version label">
+              <input
+                value={versionLabel}
+                onChange={(e) => setVersionLabel(e.target.value)}
+                placeholder="default / original / healthy"
+                className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+              />
+            </Field>
+            <Field label="Version note (optional)">
+              <input
+                value={versionNote}
+                onChange={(e) => setVersionNote(e.target.value)}
+                placeholder="e.g. share an appetiser"
+                className="w-full border border-ink bg-paper px-2 py-1 font-body text-base focus:outline-none"
+              />
+            </Field>
+          </div>
+
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
+              Ingredients
+            </div>
+            {items.length === 0 ? (
+              <div className="font-body italic text-sm text-ink-muted mb-2">
+                No ingredients yet. Add one below.
+              </div>
+            ) : (
+              <ul className="space-y-2 mb-3">
+                {items.map((it, i) => {
+                  const f = FOODS[it.food];
+                  const step = stepFor(f?.unit);
+                  return (
+                    <li key={i} className="flex items-center gap-2 font-body">
+                      <span className="flex-1 min-w-0 truncate">{f?.display || it.food}</span>
+                      <button
+                        type="button"
+                        onClick={() => adjust(i, -step)}
+                        className="w-6 h-6 border border-ink/40 flex items-center justify-center hover:bg-ink hover:text-paper"
+                      >
+                        <Minus size={11} />
+                      </button>
+                      <input
+                        type="number"
+                        value={it.amount}
+                        min={0}
+                        step={step}
+                        onChange={(e) => setAmount(i, e.target.value)}
+                        className="w-16 border border-ink/40 bg-paper px-1 py-0.5 font-mono text-[11px] text-right focus:outline-none focus:border-ink"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adjust(i, step)}
+                        className="w-6 h-6 border border-ink/40 flex items-center justify-center hover:bg-ink hover:text-paper"
+                      >
+                        <Plus size={11} />
+                      </button>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted w-10">
+                        {f?.unit}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeItem(i)}
+                        className="w-6 h-6 border border-ink/40 flex items-center justify-center hover:bg-accent hover:text-paper hover:border-accent"
+                        aria-label="Remove"
+                      >
+                        <X size={11} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <FoodPicker onAdd={addItem} />
+          </div>
+
+          <div className="border-t border-ink/20 pt-2 flex justify-between font-mono text-[10px] uppercase tracking-[0.25em]">
+            <span style={{ color: "#c44827" }}>{totals.kcal} kcal</span>
+            <span>{totals.protein}g protein</span>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-paper border-t-2 border-ink p-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim() || !items.length}
+            className="px-4 py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent disabled:opacity-30"
+          >
+            {isEdit ? "Save changes" : "Add cheat"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -2951,7 +3305,7 @@ function BuildTab({ onLogMeal, onSavePreset, onOpenPhotoMeal, apiKey }) {
         <div className="grid grid-cols-3 gap-2">
           {[
             { id: "lunch", label: "Log Lunch" },
-            { id: "shake", label: "Log Shake" },
+            { id: "shake", label: "Log Snack" },
             { id: "dinner", label: "Log Dinner" },
           ].map((b) => (
             <button
@@ -2973,7 +3327,7 @@ function BuildTab({ onLogMeal, onSavePreset, onOpenPhotoMeal, apiKey }) {
         <div className="grid grid-cols-3 gap-2">
           {[
             { id: "lunch", label: "+ Lunch preset" },
-            { id: "shake", label: "+ Shake preset" },
+            { id: "shake", label: "+ Snack preset" },
             { id: "dinner", label: "+ Dinner preset" },
           ].map((b) => (
             <button
@@ -3194,7 +3548,7 @@ function PhotoMealModal({ apiKey, onClose, onLog, defaultSlot }) {
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: "lunch", label: "Log lunch" },
-                    { id: "shake", label: "Log shake" },
+                    { id: "shake", label: "Log snack" },
                     { id: "dinner", label: "Log dinner" },
                   ].map((b) => (
                     <button
@@ -3323,15 +3677,19 @@ function EatOutModal({ apiKey, profile, target, totals, defaultSlot, onClose, on
 
           <Field label="Logging as">
             <div className="flex border border-ink">
-              {["lunch", "shake", "dinner"].map((s) => (
+              {[
+                { id: "lunch", label: "lunch" },
+                { id: "shake", label: "snack" },
+                { id: "dinner", label: "dinner" },
+              ].map((s) => (
                 <button
-                  key={s}
-                  onClick={() => setSlot(s)}
+                  key={s.id}
+                  onClick={() => setSlot(s.id)}
                   className={`flex-1 py-2 font-mono text-[10px] uppercase tracking-[0.2em] ${
-                    slot === s ? "bg-ink text-paper" : "hover:bg-ink/5"
+                    slot === s.id ? "bg-ink text-paper" : "hover:bg-ink/5"
                   }`}
                 >
-                  {s}
+                  {s.label}
                 </button>
               ))}
             </div>
@@ -3673,7 +4031,7 @@ function ProfileTab({ profile, setProfile, applyProfile, apiKey, setApiKey, remo
                     className="w-full border border-ink bg-paper px-2 py-1 font-display text-lg focus:outline-none"
                   />
                 </Field>
-                <Field label="Suggested shake">
+                <Field label="Suggested snack/shake">
                   <select
                     value={dt.suggestShake || ""}
                     onChange={(e) =>
@@ -3707,7 +4065,7 @@ function ProfileTab({ profile, setProfile, applyProfile, apiKey, setApiKey, remo
         </p>
         {[
           { slot: "lunch", label: "Lunch", presets: profile.lunchPresets },
-          { slot: "shake", label: "Shake", presets: profile.shakePresets },
+          { slot: "shake", label: "Snacks / Shake", presets: profile.shakePresets },
           { slot: "dinner", label: "Dinner", presets: profile.dinnerPresets },
         ].map(({ slot, label, presets }) => {
           const list = Object.values(presets || {});
