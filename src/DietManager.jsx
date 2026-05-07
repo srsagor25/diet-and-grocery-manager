@@ -44,14 +44,28 @@ function weekStartKey(ref = new Date()) {
 }
 
 function weekDateKeys() {
+  return planDateKeys(7);
+}
+
+function planDateKeys(days = 7) {
   const start = new Date(weekStartKey());
   const out = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < days; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     out.push(d.toISOString().slice(0, 10));
   }
   return out;
+}
+
+const PLAN_DURATIONS = [
+  { id: "weekly",   label: "Weekly",     days: 7 },
+  { id: "biweekly", label: "Bi-weekly",  days: 14 },
+  { id: "monthly",  label: "Monthly",    days: 28 },
+];
+
+function planDaysFor(duration) {
+  return PLAN_DURATIONS.find((d) => d.id === duration)?.days ?? 7;
 }
 
 function calcMeal(items) {
@@ -265,6 +279,85 @@ function freshGrocery(template = []) {
   return template.map((g) => ({ ...g, currentQty: g.initialQty }));
 }
 
+// Build a meal plan that walks through `days` and assigns lunch/shake/dinner
+// presets, biased to use what is currently in the inventory. Items with no
+// matching grocery key (compound foods, AI items) cost nothing toward the
+// "fits inventory" score.
+function generatePlanFromInventory(profile, inventory, days) {
+  const virtualInv = (inventory || []).map((g) => ({ ...g }));
+  const plan = {};
+  const lastUsed = {}; // presetKey -> dayIdx
+  const slots = ["lunch", "shake", "dinner"];
+
+  function presetNeeds(preset) {
+    const needed = {};
+    for (const it of preset.items || []) {
+      for (const d of ingredientDeltas(it)) {
+        needed[d.key] = (needed[d.key] || 0) + d.amount;
+      }
+    }
+    return needed;
+  }
+
+  function score(preset, dayIdx) {
+    const needed = presetNeeds(preset);
+    let fitsScore = 0;
+    let allAvailable = true;
+    let untrackedCount = 0;
+    for (const [k, amount] of Object.entries(needed)) {
+      const item = virtualInv.find((g) => g.key === k);
+      if (!item) {
+        // Untracked ingredient — don't punish; can't tell.
+        untrackedCount += 1;
+        continue;
+      }
+      if (item.currentQty >= amount) {
+        fitsScore += amount;
+      } else {
+        allAvailable = false;
+        fitsScore -= (amount - item.currentQty) * 2;
+      }
+    }
+    if (Object.keys(needed).length === 0) untrackedCount += 1;
+    const sinceUsed = lastUsed[preset.key] != null ? dayIdx - lastUsed[preset.key] : 100;
+    return { allAvailable, fitsScore, sinceUsed, untrackedCount };
+  }
+
+  function applyDecrement(preset) {
+    const needed = presetNeeds(preset);
+    for (const [k, amount] of Object.entries(needed)) {
+      const item = virtualInv.find((g) => g.key === k);
+      if (item) item.currentQty = Math.max(0, item.currentQty - amount);
+    }
+  }
+
+  for (let d = 0; d < days.length; d++) {
+    const dayKey = days[d];
+    plan[dayKey] = { lunch: null, shake: null, dinner: null };
+    for (const slot of slots) {
+      const slotPresets = profile?.[`${slot}Presets`] || {};
+      const candidates = Object.values(slotPresets);
+      if (!candidates.length) continue;
+      const ranked = candidates
+        .map((p) => ({ p, ...score(p, d) }))
+        .sort((a, b) => {
+          if (a.allAvailable !== b.allAvailable) return b.allAvailable - a.allAvailable;
+          if (b.sinceUsed !== a.sinceUsed) return b.sinceUsed - a.sinceUsed;
+          return b.fitsScore - a.fitsScore;
+        });
+      const chosen = ranked[0]?.p;
+      if (!chosen) continue;
+      plan[dayKey][slot] = {
+        name: chosen.name,
+        items: (chosen.items || []).map((i) => ({ ...i })),
+      };
+      lastUsed[chosen.key] = d;
+      applyDecrement(chosen);
+    }
+  }
+  return plan;
+}
+
 function slugify(s) {
   return String(s || "")
     .toLowerCase()
@@ -353,19 +446,20 @@ function TabBar({ tab, setTab }) {
   const tabs = [
     { id: "today",   label: "Today" },
     { id: "week",    label: "Week" },
+    { id: "plan",    label: "Plan" },
     { id: "cheat",   label: "Cheat" },
     { id: "grocery", label: "Grocery" },
     { id: "profile", label: "Profile" },
     { id: "build",   label: "Build" },
   ];
   return (
-    <nav className="border-y border-ink mb-6">
-      <ul className="flex">
+    <nav className="border-y border-ink mb-6 overflow-x-auto">
+      <ul className="flex min-w-max md:min-w-0">
         {tabs.map((t) => (
-          <li key={t.id} className="flex-1">
+          <li key={t.id} className="flex-1 min-w-[64px]">
             <button
               onClick={() => setTab(t.id)}
-              className={`w-full py-3 px-1 font-mono text-[10px] md:text-[11px] uppercase tracking-[0.18em] md:tracking-[0.25em] transition-colors ${
+              className={`w-full py-3 px-2 font-mono text-[10px] md:text-[11px] uppercase tracking-[0.18em] md:tracking-[0.25em] transition-colors whitespace-nowrap ${
                 tab === t.id
                   ? "bg-ink text-paper"
                   : "text-ink hover:bg-ink/5"
@@ -1086,6 +1180,7 @@ export default function DietManager() {
   const [grocery, setGrocery] = useState(() => freshGrocery(SAIDUR_PROFILE.groceryTemplate));
   const [weekDays, setWeekDays] = useState([]);
   const [plannedWeek, setPlannedWeek] = useState({});
+  const [planDuration, setPlanDuration] = useState("weekly");
   const [manualShopping, setManualShopping] = useState([]);
   const [photoModal, setPhotoModal] = useState(null); // null | { defaultSlot? }
   const [eatOutModal, setEatOutModal] = useState(null); // null | { defaultSlot? }
@@ -1110,6 +1205,7 @@ export default function DietManager() {
       const todaySteps = await loadKey(`steps:${date}`, null);
       const groceryStored = await loadKey("grocery:current", null);
       const planStored = await loadKey("plan:current_week", null);
+      const planDurationStored = await loadKey("plan:duration", "weekly");
       const manualStored = await loadKey("shopping:manual", []);
 
       if (todayMeals?.meals) setMeals(todayMeals.meals);
@@ -1126,6 +1222,9 @@ export default function DietManager() {
           : freshGrocery(activeProfile.groceryTemplate),
       );
       if (planStored) setPlannedWeek(planStored);
+      if (typeof planDurationStored === "string" && PLAN_DURATIONS.some((p) => p.id === planDurationStored)) {
+        setPlanDuration(planDurationStored);
+      }
       if (Array.isArray(manualStored)) setManualShopping(manualStored);
 
       // Load last 7 days for week tab
@@ -1161,6 +1260,9 @@ export default function DietManager() {
   useEffect(() => {
     if (!loading) saveKey("plan:current_week", plannedWeek);
   }, [plannedWeek, loading]);
+  useEffect(() => {
+    if (!loading) saveKey("plan:duration", planDuration);
+  }, [planDuration, loading]);
   useEffect(() => {
     if (!loading) saveKey("shopping:manual", manualShopping);
   }, [manualShopping, loading]);
@@ -1515,6 +1617,18 @@ export default function DietManager() {
 
         {tab === "week" && <WeekTab weekDays={weekDays} dayTypes={profile.dayTypes} />}
 
+        {tab === "plan" && (
+          <PlanTab
+            profile={profile}
+            grocery={grocery}
+            plannedWeek={plannedWeek}
+            setPlannedWeek={setPlannedWeek}
+            planDuration={planDuration}
+            setPlanDuration={setPlanDuration}
+            onJumpToShopping={() => setTab("grocery")}
+          />
+        )}
+
         {tab === "cheat" && (
           <CheatTab
             onLogCheat={logCheat}
@@ -1542,6 +1656,8 @@ export default function DietManager() {
             onAddManual={addManualShopping}
             onUpdateManual={updateManualShopping}
             onDeleteManual={deleteManualShopping}
+            planDuration={planDuration}
+            onJumpToPlan={() => setTab("plan")}
           />
         )}
 
@@ -1928,9 +2044,7 @@ function GroceryTab({
   onRestock,
   onResetTemplate,
   plannedWeek,
-  setPlannedWeek,
   onClearPlan,
-  profile,
   onAddItem,
   onUpdateItem,
   onDeleteItem,
@@ -1938,9 +2052,10 @@ function GroceryTab({
   onAddManual,
   onUpdateManual,
   onDeleteManual,
+  planDuration = "weekly",
+  onJumpToPlan,
 }) {
   const [view, setView] = useState("inventory"); // inventory | shopping | reset
-  const [plannerOpen, setPlannerOpen] = useState(false);
   const [itemModal, setItemModal] = useState(null); // { mode: 'add'|'edit', item? }
   const [manualForm, setManualForm] = useState({ name: "", qty: "", unit: "", note: "" });
   const [editingManualId, setEditingManualId] = useState(null);
@@ -2009,10 +2124,21 @@ function GroceryTab({
     setManualForm({ name: "", qty: "", unit: "", note: "" });
   }
 
+  const planDays = useMemo(() => planDateKeys(planDaysFor(planDuration)), [planDuration]);
+  const planSlice = useMemo(() => {
+    const out = {};
+    for (const d of planDays) if (plannedWeek?.[d]) out[d] = plannedWeek[d];
+    return out;
+  }, [plannedWeek, planDays]);
+  const planEntries = Object.keys(planSlice).length;
   const shoppingList = useMemo(
-    () => generateShoppingList(plannedWeek, grocery),
-    [plannedWeek, grocery],
+    () => generateShoppingList(planSlice, grocery),
+    [planSlice, grocery],
   );
+  const planLabel = PLAN_DURATIONS.find((d) => d.id === planDuration)?.label || "Weekly";
+  const planRange = planDays.length
+    ? `${fmtDate(planDays[0])} – ${fmtDate(planDays[planDays.length - 1])}`
+    : "";
 
   function markPurchased(key, toBuy) {
     onAdjust(key, toBuy);
@@ -2087,20 +2213,22 @@ function GroceryTab({
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
-                Shopping list
+                Shopping list · {planLabel.toLowerCase()} · {planRange || "—"}
               </div>
               <div className="font-display text-xl font-bold">
                 {shoppingList.length
                   ? `${shoppingList.length} item${shoppingList.length === 1 ? "" : "s"} to buy`
-                  : "Plan a week to generate"}
+                  : planEntries === 0
+                  ? "Make a plan to generate"
+                  : "Inventory covers the plan"}
               </div>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setPlannerOpen(true)}
+                onClick={onJumpToPlan}
                 className="px-3 py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent flex items-center gap-2"
               >
-                <Calendar size={12} /> Plan this week
+                <Calendar size={12} /> Open Plan tab
               </button>
               {Object.keys(plannedWeek).length ? (
                 <button
@@ -2116,14 +2244,14 @@ function GroceryTab({
           {/* Auto-generated section */}
           <div>
             <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-2">
-              Auto from week plan
+              Auto from {planLabel.toLowerCase()} plan
             </div>
             {shoppingList.length === 0 ? (
               <div className="border border-ink/30 p-6 text-center">
                 <div className="font-display italic text-ink-muted">
-                  {Object.keys(plannedWeek).length
+                  {planEntries > 0
                     ? "All planned ingredients are in stock. ✨"
-                    : "No plan yet. Tap 'Plan this week' to assign meals to days."}
+                    : "No plan yet. Open the Plan tab and tap \"Suggest from inventory\"."}
                 </div>
               </div>
             ) : (
@@ -2277,15 +2405,6 @@ function GroceryTab({
             </button>
           </div>
         </div>
-      )}
-
-      {plannerOpen && (
-        <WeekPlannerModal
-          plannedWeek={plannedWeek}
-          setPlannedWeek={setPlannedWeek}
-          onClose={() => setPlannerOpen(false)}
-          profile={profile}
-        />
       )}
 
       {itemModal && (
@@ -2456,120 +2575,235 @@ function InventoryItemModal({ mode, item, existingCategories = [], onClose, onSa
   );
 }
 
-function WeekPlannerModal({ plannedWeek, setPlannedWeek, onClose, profile }) {
-  const days = weekDateKeys();
-  const [draft, setDraft] = useState(() => {
-    const seed = {};
-    for (const d of days) seed[d] = plannedWeek[d] || { lunch: null, shake: null, dinner: null };
-    return seed;
-  });
+/* ============================================================
+   TAB: PLAN (weekly / biweekly / monthly meal planner)
+============================================================ */
+
+function PlanTab({
+  profile,
+  grocery,
+  plannedWeek,
+  setPlannedWeek,
+  planDuration,
+  setPlanDuration,
+  onJumpToShopping,
+}) {
+  const days = useMemo(() => planDateKeys(planDaysFor(planDuration)), [planDuration]);
+
+  const presetsBySlot = {
+    lunch: Object.values(profile?.lunchPresets || {}),
+    shake: Object.values(profile?.shakePresets || {}),
+    dinner: Object.values(profile?.dinnerPresets || {}),
+  };
+
+  const filledDays = days.filter((d) => {
+    const day = plannedWeek?.[d];
+    return day && (day.lunch || day.shake || day.dinner);
+  }).length;
 
   function setSlot(day, slot, preset) {
-    setDraft((prev) => ({
+    setPlannedWeek((prev) => ({
       ...prev,
       [day]: {
-        ...prev[day],
+        ...(prev[day] || {}),
         [slot]: preset
-          ? { name: preset.name, items: preset.items.map((i) => ({ ...i })) }
+          ? { name: preset.name, items: (preset.items || []).map((i) => ({ ...i })) }
           : null,
       },
     }));
   }
 
   function repeatToAll(day) {
-    setDraft((prev) => {
-      const src = prev[day];
+    const src = plannedWeek?.[day];
+    if (!src) return;
+    setPlannedWeek((prev) => {
       const next = { ...prev };
-      for (const d of days) next[d] = { ...src };
+      for (const d of days) {
+        next[d] = {
+          lunch: src.lunch ? { ...src.lunch, items: src.lunch.items.map((i) => ({ ...i })) } : null,
+          shake: src.shake ? { ...src.shake, items: src.shake.items.map((i) => ({ ...i })) } : null,
+          dinner: src.dinner ? { ...src.dinner, items: src.dinner.items.map((i) => ({ ...i })) } : null,
+        };
+      }
       return next;
     });
   }
 
-  function save() {
-    setPlannedWeek(draft);
-    onClose();
+  function clearAll() {
+    if (!confirm("Clear the entire plan in the current range?")) return;
+    setPlannedWeek((prev) => {
+      const next = { ...prev };
+      for (const d of days) delete next[d];
+      return next;
+    });
   }
 
-  const allOptions = (slot) => {
-    if (slot === "lunch") return Object.values(profile?.lunchPresets || {});
-    if (slot === "shake") return Object.values(profile?.shakePresets || {});
-    if (slot === "dinner") return Object.values(profile?.dinnerPresets || {});
-    return [];
-  };
+  function suggestFromInventory() {
+    const empty =
+      Object.values(profile?.lunchPresets || {}).length === 0 &&
+      Object.values(profile?.shakePresets || {}).length === 0 &&
+      Object.values(profile?.dinnerPresets || {}).length === 0;
+    if (empty) {
+      alert("Add at least one preset (Build tab → Save as preset) first.");
+      return;
+    }
+    const generated = generatePlanFromInventory(profile, grocery, days);
+    setPlannedWeek((prev) => ({ ...prev, ...generated }));
+  }
+
+  function copyFromPreviousWeek() {
+    const prev = {};
+    for (const d of days) {
+      const date = new Date(d);
+      date.setDate(date.getDate() - 7);
+      const prevKey = date.toISOString().slice(0, 10);
+      const src = plannedWeek?.[prevKey];
+      if (src) {
+        prev[d] = {
+          lunch: src.lunch ? { ...src.lunch, items: src.lunch.items.map((i) => ({ ...i })) } : null,
+          shake: src.shake ? { ...src.shake, items: src.shake.items.map((i) => ({ ...i })) } : null,
+          dinner: src.dinner ? { ...src.dinner, items: src.dinner.items.map((i) => ({ ...i })) } : null,
+        };
+      }
+    }
+    if (Object.keys(prev).length === 0) {
+      alert("No plan in the previous week to copy from.");
+      return;
+    }
+    setPlannedWeek((p) => ({ ...p, ...prev }));
+  }
 
   return (
-    <div className="fixed inset-0 bg-ink/60 z-50 flex items-end md:items-center justify-center p-2 md:p-6">
-      <div className="bg-paper border-2 border-ink w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-paper border-b-2 border-ink px-4 py-3 flex items-center justify-between">
-          <h3 className="font-display text-2xl font-black tracking-tight">Plan this week</h3>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 border border-ink flex items-center justify-center hover:bg-ink hover:text-paper"
-          >
-            <X size={14} />
-          </button>
+    <div className="space-y-5">
+      <div className="border-b-2 border-ink pb-2">
+        <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted">
+          What's coming up
         </div>
+        <h2 className="font-display text-3xl md:text-4xl font-black tracking-tight">Meal Plan</h2>
+        <div className="font-body italic text-ink-muted text-sm mt-1">
+          {fmtDate(days[0])} – {fmtDate(days[days.length - 1])}
+          {" · "}
+          {filledDays}/{days.length} days planned
+        </div>
+      </div>
 
-        <div className="p-4 space-y-4">
-          {days.map((d) => (
+      {/* Duration toggle */}
+      <div className="flex border border-ink">
+        {PLAN_DURATIONS.map((d) => (
+          <button
+            key={d.id}
+            onClick={() => setPlanDuration(d.id)}
+            className={`flex-1 py-2 font-mono text-[10px] uppercase tracking-[0.2em] ${
+              planDuration === d.id ? "bg-ink text-paper" : "hover:bg-ink/5"
+            }`}
+          >
+            {d.label} · {d.days}d
+          </button>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <button
+          onClick={suggestFromInventory}
+          className="py-2 px-3 bg-accent text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink flex items-center justify-center gap-2"
+        >
+          <Sparkles size={12} /> Suggest from inventory
+        </button>
+        <button
+          onClick={copyFromPreviousWeek}
+          className="py-2 px-3 border-2 border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper flex items-center justify-center gap-2"
+        >
+          <RotateCcw size={12} /> Copy from previous week
+        </button>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={onJumpToShopping}
+          className="px-3 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper flex items-center gap-2"
+        >
+          <ShoppingCart size={12} /> View shopping list
+        </button>
+        <button
+          onClick={clearAll}
+          className="px-3 py-2 border border-accent text-accent font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent hover:text-paper flex items-center gap-2"
+        >
+          <Trash2 size={12} /> Clear plan
+        </button>
+      </div>
+
+      {/* Day list */}
+      <div className="space-y-3">
+        {days.map((d) => {
+          const cur = plannedWeek?.[d] || {};
+          const dayLog = ["lunch", "shake", "dinner"]
+            .map((s) => cur?.[s])
+            .filter(Boolean);
+          const dayKcal = dayLog.reduce((sum, m) => sum + calcMeal(m.items).kcal, 0);
+          return (
             <div key={d} className="border border-ink p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="font-display text-lg font-bold">{fmtDate(d)}</div>
+              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                <div>
+                  <div className="font-display text-lg font-bold">{fmtDate(d)}</div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted">
+                    {dayLog.length}/3 slots · {dayKcal} kcal
+                  </div>
+                </div>
                 <button
                   onClick={() => repeatToAll(d)}
-                  className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted hover:text-accent"
+                  disabled={!dayLog.length}
+                  className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-muted hover:text-accent disabled:opacity-30"
                 >
-                  Repeat to all 7 days
+                  Repeat to all {days.length} days
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {["lunch", "shake", "dinner"].map((slot) => {
-                  const options = allOptions(slot);
-                  const cur = draft[d]?.[slot];
+                  const options = presetsBySlot[slot] || [];
+                  const slotMeal = cur?.[slot];
+                  const matched = slotMeal
+                    ? options.find((o) => o.name === slotMeal.name)
+                    : null;
                   return (
                     <div key={slot} className="border border-ink/30 p-2">
                       <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted mb-1">
                         {slot}
                       </div>
-                      <select
-                        value={cur ? options.find((o) => o.name === cur.name)?.key || "" : ""}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (!v) return setSlot(d, slot, null);
-                          const p = options.find((o) => o.key === v);
-                          setSlot(d, slot, p);
-                        }}
-                        className="w-full border border-ink bg-paper px-2 py-1 text-sm"
-                      >
-                        <option value="">— none —</option>
-                        {options.map((o) => (
-                          <option key={o.key} value={o.key}>
-                            {o.name}
-                          </option>
-                        ))}
-                      </select>
+                      {options.length === 0 ? (
+                        <div className="font-body italic text-xs text-ink-muted">
+                          No {slot} presets — Build tab.
+                        </div>
+                      ) : (
+                        <select
+                          value={matched?.key || ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!v) return setSlot(d, slot, null);
+                            const p = options.find((o) => o.key === v);
+                            setSlot(d, slot, p);
+                          }}
+                          className="w-full border border-ink bg-paper px-2 py-1 text-sm"
+                        >
+                          <option value="">— none —</option>
+                          {options.map((o) => (
+                            <option key={o.key} value={o.key}>
+                              {o.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
+      </div>
 
-        <div className="sticky bottom-0 bg-paper border-t-2 border-ink p-3 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-ink font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-ink hover:text-paper"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            className="px-4 py-2 bg-ink text-paper font-mono text-[10px] uppercase tracking-[0.25em] hover:bg-accent"
-          >
-            Save plan
-          </button>
-        </div>
+      <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-ink-muted italic">
+        Plan auto-saves. Shopping list auto-updates from this plan.
       </div>
     </div>
   );
